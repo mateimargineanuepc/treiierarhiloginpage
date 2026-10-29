@@ -50,7 +50,7 @@ js/reports.html         Logica clientului pentru rapoarte
 views/EntryView.html        Formularul de introducere date
 views/ReportsView.html      Rapoartele
 views/UnauthorizedView.html Ecranul „Acces neautorizat"
-views/LoginView.html        Ecranul de login din aplicație (vezi nota de la „Stare actuală")
+views/LoginView.html        Ecran de rezervă: link către pagina de login (fără sesiune / sesiune expirată)
 services/Constants.js       Constante: ID sheet, nume foi, headere, Client ID Google, durata sesiunii
 services/SheetService.js    Acces centralizat la Spreadsheet (openById)
 services/AuthService.js     Verificare token Google, sesiuni, utilizatori din Nomenclator
@@ -84,8 +84,11 @@ Contul care face deploy-ul trebuie să aibă drept de **editare** pe sheet.
 ## 4. Autentificare — de ce e construită așa
 
 ### Setarea aleasă
-`appsscript.json`: `"executeAs": "USER_DEPLOYING"`, `"access": "ANYONE"`.
+`appsscript.json`: `"executeAs": "USER_DEPLOYING"`, `"access": "ANYONE_ANONYMOUS"`
+(în dialogul de deploy: *Execute as: Me*, *Who has access: Anyone*).
 Aplicația rulează cu contul proprietarului deploy-ului, deci **utilizatorii nu au nevoie de acces la Sheet**.
+Accesul „Anyone" înseamnă că Apps Script nu mai cere el un login Google; identitatea o dovedește
+tokenul Google verificat pe server (vezi mai jos), iar autorizarea vine din `Nomenclator_Setări`.
 
 ### Problema
 Cu `USER_DEPLOYING`, `Session.getActiveUser().getEmail()` întoarce **șir gol** pentru vizitatorii
@@ -119,16 +122,29 @@ Același lucru se întâmplă și dacă pagina e pusă într-un Google Sites (em
 
 ### Soluția adoptată: pagina de login pe alt domeniu
 Butonul Google rulează pe o pagină statică găzduită pe un domeniu acceptat (GitHub Pages),
-iar Apps Script primește doar rezultatul:
+iar Apps Script primește doar rezultatul. Utilizatorul ajunge **direct în aplicație**, fără un al doilea ecran de login:
 
 1. `https://mateimargineanuepc.github.io/treiierarhiloginpage/` (din `docs/index.html`) afișează butonul Google Sign-In.
-2. După login, pagina redirecționează la linkul `/exec` al web app-ului, cu `?id_token=...`.
-3. `doGet(e)` citește `id_token`, îl verifică, creează sesiunea și o trimite paginii (în loc ca clientul să facă login).
-4. Tokenul se face **de unică folosință** (hash-ul lui se reține în cache după prima folosire),
-   ca să nu poată fi refolosit dacă linkul rămâne în istoricul browserului.
-5. Fără sesiune, aplicația afișează un link „Autentificare" către pagina de login.
+2. După login, pagina redirecționează la linkul `/exec` din `docs/config.json`, cu `?id_token=...`.
+3. `doGet(e)` (în `Code.js`) citește `id_token`, îl verifică (`AuthService.loginWithIdToken`),
+   îl marchează **de unică folosință** (hash-ul lui intră în cache), creează sesiunea și o trimite paginii
+   în `window.ContaAuth.bootstrap`. Aplicația se deschide direct.
+4. Sesiunea se păstrează în `sessionStorage`, deci o reîncărcare a paginii (cu tokenul deja consumat în URL) nu cere login din nou.
 
----
+Ecranul din aplicație (`views/LoginView.html`) apare doar ca **rezervă**, cu un singur link „Autentificare"
+către pagina de login, când:
+- linkul `/exec` e deschis direct, fără token;
+- sesiunea a expirat (6 ore) sau a fost ștearsă din cache;
+- tokenul din URL e invalid sau a mai fost folosit.
+
+Linkul de rezervă trebuie apăsat de utilizator (nu e redirect automat): iframe-ul Apps Script permite navigarea
+ferestrei principale doar după un click.
+
+### Funcțiile globale sunt protejate
+Orice funcție globală din `Code.js` poate fi apelată din browser prin `google.script.run`.
+De aceea funcțiile de setup și test (`setupSheets`, `migrateNomenclatorReportsColumn`, `test*`)
+încep cu `beginEditorRun_()`: se execută doar dacă utilizatorul care le rulează este chiar contul scriptului
+(adică rulate din editorul Apps Script), altfel aruncă eroare. Funcțiile cu `_` la final nu sunt apelabile din client.
 
 ### Configurarea paginii de login (`docs/config.json`)
 Pagina citește la fiecare încărcare fișierul `docs/config.json`:
@@ -189,26 +205,21 @@ La prima rulare după adăugarea unui scope nou, contul care face deploy-ul treb
 
 ## 8. Stare actuală
 
-Făcut:
-- [x] Cod descărcat din Apps Script cu clasp și versionat local
+Făcut (în cod):
+- [x] Cod descărcat din Apps Script cu clasp și versionat
 - [x] Conectare la un sheet ales prin `SPREADSHEET_ID` (`openById`)
-- [x] Backend de autentificare: verificare ID token Google, sesiuni de 6 ore, token de sesiune la toate funcțiile `api*`
-- [x] OAuth client ID creat și pus în cod
-- [x] Cod împins în Apps Script
-- [x] Repo `treiierarhiloginpage` creat pe contul epc și proiectul urcat pe `main`
-- [x] Pagina de login scrisă (`docs/index.html`), configurabilă din `docs/config.json`
+- [x] Autentificare: verificare ID token Google, token de unică folosință, sesiuni de 6 ore, token de sesiune la toate funcțiile `api*`
+- [x] `doGet(e)` acceptă `id_token` și deschide direct aplicația; ecranul de login din aplicație e doar link de rezervă
+- [x] Funcțiile de setup/test protejate cu `beginEditorRun_()`
+- [x] Pagina de login (`docs/index.html`), configurabilă din `docs/config.json`
+- [x] Repo `treiierarhiloginpage` pe contul epc, cu `main` urcat
 
-De făcut:
-- [ ] Activare GitHub Pages (Settings > Pages > branch `main`, folder `/docs`) și completarea `appUrl` în `docs/config.json`
-- [ ] Adăugare `https://mateimargineanuepc.github.io` la Authorized JavaScript origins
-- [ ] `doGet(e)`: acceptă `id_token`, îl folosește o singură dată, trimite sesiunea paginii
-- [ ] Înlocuirea ecranului `LoginView.html` (butonul Google din iframe nu poate funcționa) cu linkul către pagina de login
-- [ ] Deploy nou și reautorizare scope; test cu un email din `Nomenclator_Setări` și unul din afara listei
-
-> **Notă:** codul împins acum în Apps Script conține încă ecranul de login cu butonul Google în iframe.
-> Acela nu poate funcționa (origin interzis) și va fi înlocuit la pasul de mai sus.
-
----
+De făcut / verificat în afara codului:
+- [ ] `clasp push --force` (s-a schimbat `appsscript.json`) și **New version** pe deploy-ul existent, cu *Who has access: Anyone*
+- [ ] GitHub Pages activat: *Settings > Pages > `main` > `/docs`*
+- [ ] `https://mateimargineanuepc.github.io` la *Authorized JavaScript origins* (clientul OAuth de tip Web application)
+- [ ] `appUrl` completat în `docs/config.json`
+- [ ] Test cu un email din `Nomenclator_Setări` și unul din afara listei
 
 ## 9. Note de securitate
 
@@ -216,4 +227,5 @@ De făcut:
   dar nu se publică fără motiv (repo-ul de login e public; aplicația nu).
 - Accesul real este controlat de lista din `Nomenclator_Setări`; verifică periodic cine apare acolo.
 - Linkul de login transportă un ID token în URL; de aceea tokenul e de unică folosință și expiră repede (aprox. 1 oră).
+- Datele nu sunt expuse fără sesiune: toate funcțiile `api*` cer token valid. Oricine află linkul `/exec` poate vedea doar pagina, nu datele.
 - Sesiunile stau în `CacheService` și pot dispărea mai devreme de 6 ore; utilizatorul doar se loghează din nou.

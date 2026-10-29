@@ -6,9 +6,13 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <?!= include('css/material'); ?>
     <script>
-        window.ContaAuth = { clientId: <?!= JSON.stringify(GOOGLE_CLIENT_ID) ?>, token: '', onExpired: function () {} };
+        window.ContaAuth = {
+            token: '',
+            loginUrl: <?!= JSON.stringify(loginPageUrl) ?>,
+            bootstrap: <?!= bootstrapJson ?>,
+            onExpired: function () {}
+        };
     </script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
     <!-- Initial loading screen with skeleton -->

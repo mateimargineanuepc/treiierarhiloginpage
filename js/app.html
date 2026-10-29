@@ -45,9 +45,7 @@
 
     function runServer(fnName) {
         var args = Array.prototype.slice.call(arguments, 1);
-        if (fnName !== 'apiLogin') {
-            args.unshift(window.ContaAuth.token);
-        }
+        args.unshift(window.ContaAuth.token);
         return new Promise(function (resolve, reject) {
             var runner = google.script.run
                 .withSuccessHandler(resolve)
@@ -451,35 +449,10 @@
         els.loadingView.classList.add('hidden');
         els.appRoot.classList.add('hidden');
         els.loginView.classList.remove('hidden');
-        $('login-status').textContent = '';
-        $('login-error').textContent = message || '';
-        renderGoogleButton(0);
-    }
-
-    function renderGoogleButton(attempt) {
-        if (!window.ContaAuth.clientId) {
-            $('login-error').textContent = 'Autentificarea Google nu este configurată (lipsește GOOGLE_CLIENT_ID).';
-            return;
+        $('login-link').href = window.ContaAuth.loginUrl;
+        if (message) {
+            $('login-message').textContent = message;
         }
-        if (!window.google || !google.accounts || !google.accounts.id) {
-            if (attempt > 50) {
-                $('login-error').textContent = 'Nu s-a putut încărca Google Sign-In. Reîncărcați pagina.';
-                return;
-            }
-            setTimeout(function () {
-                renderGoogleButton(attempt + 1);
-            }, 200);
-            return;
-        }
-        console.log('Google Sign-In origin:', window.location.origin);
-        google.accounts.id.initialize({
-            client_id: window.ContaAuth.clientId,
-            callback: handleGoogleCredential,
-            auto_select: false,
-        });
-        var holder = $('google-signin-button');
-        holder.innerHTML = '';
-        google.accounts.id.renderButton(holder, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'ro' });
     }
 
     function applyLoadedUser(user) {
@@ -492,30 +465,12 @@
         showApp(user);
     }
 
-    function handleGoogleCredential(response) {
-        $('login-error').textContent = '';
-        $('login-status').textContent = 'Se verifică contul...';
-        runServer('apiLogin', response.credential)
-            .then(function (result) {
-                window.ContaAuth.token = result.token;
-                saveToken(result.token);
-                applyLoadedUser(result.user);
-            })
-            .catch(function (err) {
-                $('login-status').textContent = '';
-                $('login-error').textContent = err.message;
-            });
-    }
-
     function logout() {
         var token = window.ContaAuth.token;
-        if (window.google && google.accounts && google.accounts.id) {
-            google.accounts.id.disableAutoSelect();
-        }
         if (token) {
             runServer('apiLogout').catch(function () {});
         }
-        showLogin('');
+        showLogin('Ați fost deconectat.');
     }
 
     function setupLogoutLinks() {
@@ -634,9 +589,17 @@
             showLogin('Sesiunea a expirat. Autentificați-vă din nou.');
         };
 
+        var bootstrap = window.ContaAuth.bootstrap;
+        if (bootstrap && bootstrap.token) {
+            window.ContaAuth.token = bootstrap.token;
+            saveToken(bootstrap.token);
+            applyLoadedUser(bootstrap.user);
+            return;
+        }
+
         var savedToken = readSavedToken();
         if (!savedToken) {
-            showLogin('');
+            showLogin(bootstrap && bootstrap.error ? bootstrap.error : '');
             return;
         }
         window.ContaAuth.token = savedToken;

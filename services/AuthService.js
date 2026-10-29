@@ -67,12 +67,35 @@ var AuthService = (function () {
     }
 
     /**
-     * Login cu ID token Google.
+     * Marchează un ID token ca folosit; aruncă dacă a mai fost folosit.
+     * @param {string} idToken
+     */
+    function consumeIdTokenOnce(idToken) {
+        var digest = Utilities.base64EncodeWebSafe(
+            Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
+        );
+        var key = USED_TOKEN_CACHE_PREFIX + digest;
+        var lock = LockService.getScriptLock();
+        lock.waitLock(10000);
+        try {
+            var cache = CacheService.getScriptCache();
+            if (cache.get(key)) {
+                throw new Error('Linkul de autentificare a fost deja folosit. Autentificați-vă din nou.');
+            }
+            cache.put(key, '1', SESSION_TTL_SECONDS);
+        } finally {
+            lock.releaseLock();
+        }
+    }
+
+    /**
+     * Login cu ID token Google (de unică folosință).
      * @param {string} idToken
      * @returns {{ token: string, user: Object }}
      */
-    function login(idToken) {
+    function loginWithIdToken(idToken) {
         var email = verifyIdToken(idToken);
+        consumeIdTokenOnce(idToken);
         var token = createSession(email);
         currentEmail = email;
         return { token: token, user: getCurrentUser() };
@@ -224,7 +247,7 @@ var AuthService = (function () {
     }
 
     return {
-        login: login,
+        loginWithIdToken: loginWithIdToken,
         logout: logout,
         useSession: useSession,
         setCurrentEmail: setCurrentEmail,

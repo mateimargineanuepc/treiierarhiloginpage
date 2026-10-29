@@ -90,9 +90,7 @@ var ReportsModule = (function () {
 
     function runServer(fnName) {
         var args = Array.prototype.slice.call(arguments, 1);
-        if (fnName !== 'apiLogin') {
-            args.unshift(window.ContaAuth.token);
-        }
+        args.unshift(window.ContaAuth.token);
         return new Promise(function (resolve, reject) {
             var runner = google.script.run
                 .withSuccessHandler(resolve)

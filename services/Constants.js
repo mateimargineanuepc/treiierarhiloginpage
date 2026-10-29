@@ -5,6 +5,9 @@ var SPREADSHEET_ID = '1g2P0SC-qGaBi8_yoWUZUfVfoSAhmkJUKp1Ay-FaeIzI';
 // OAuth Client ID (tip Web application) din Google Cloud Console, pentru Google Sign-In.
 var GOOGLE_CLIENT_ID = '584122324362-jtdnkvlasss78rlbkel6u6o39mhhkstu.apps.googleusercontent.com';
 var SESSION_TTL_SECONDS = 21600;
+var USED_TOKEN_CACHE_PREFIX = 'used_';
+// Pagina de login (GitHub Pages) către care e trimis utilizatorul fără sesiune.
+var LOGIN_PAGE_URL = 'https://mateimargineanuepc.github.io/treiierarhiloginpage/';
 var SESSION_CACHE_PREFIX = 'sess_';
 
 var SHEET_REGISTRU = 'Registru_Central';

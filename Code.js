@@ -3,11 +3,26 @@
  */
 
 /**
- * Servește aplicația web.
+ * Servește aplicația web. Dacă URL-ul conține id_token (venit de la pagina de login),
+ * îl verifică și trimite sesiunea direct paginii.
+ * @param {GoogleAppsScript.Events.DoGet} e
  * @returns {GoogleAppsScript.HTML.HtmlOutput}
  */
-function doGet() {
-    return HtmlService.createTemplateFromFile('Index')
+function doGet(e) {
+    var bootstrap = null;
+    var idToken = e && e.parameter && e.parameter.id_token;
+    if (idToken) {
+        try {
+            bootstrap = AuthService.loginWithIdToken(idToken);
+        } catch (err) {
+            bootstrap = { error: err.message };
+        }
+    }
+
+    var template = HtmlService.createTemplateFromFile('Index');
+    template.bootstrapJson = JSON.stringify(bootstrap).replace(/</g, '\\u003c');
+    template.loginPageUrl = LOGIN_PAGE_URL;
+    return template
         .evaluate()
         .setTitle('ContaAPP — Contabilitate Primară')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -24,15 +39,6 @@ function include(filename) {
 }
 
 // --- API handlers (apelate din client via google.script.run) ---
-
-/**
- * Autentificare cu token-ul ID emis de Google Sign-In.
- * @param {string} idToken - Credențialul (JWT) primit de la Google
- * @returns {{ token: string, user: Object }}
- */
-function apiLogin(idToken) {
-    return AuthService.login(idToken);
-}
 
 /**
  * Încheie sesiunea curentă.
@@ -183,9 +189,24 @@ function apiGetReportIstoricVenituri(token, categoriesJson, fromIso, toIso) {
 // --- Setup și teste (rulare din editor Apps Script) ---
 
 /**
+ * Permite rularea doar din editorul Apps Script de către utilizatorul care rulează scriptul.
+ * Funcțiile globale pot fi apelate din browser prin google.script.run, deci setup-ul și
+ * testele trebuie protejate. Setează și utilizatorul curent pentru verificările de autorizare.
+ */
+function beginEditorRun_() {
+    var active = Session.getActiveUser().getEmail();
+    var owner = Session.getEffectiveUser().getEmail();
+    if (!active || active !== owner) {
+        throw new Error('Funcție disponibilă doar din editorul Apps Script.');
+    }
+    AuthService.setCurrentEmail(active);
+}
+
+/**
  * Creează/inițializează foile și datele seed.
  */
 function setupSheets() {
+    beginEditorRun_();
     var ss = SheetService.getSpreadsheet();
 
     var registru = ss.getSheetByName(SHEET_REGISTRU);
@@ -228,7 +249,7 @@ function setupSheets() {
     }
     nomenclator.getRange(2, 1, seedData.length, NOMENCLATOR_HEADERS.length).setValues(seedData);
 
-    protectHeaders(registru, nomenclator);
+    protectHeaders_(registru, nomenclator);
 
     Logger.log('setupSheets() complet. Completați coloana Email și Acces Rapoarte (Da/Nu) în Nomenclator_Setări.');
 }
@@ -238,6 +259,7 @@ function setupSheets() {
  * Rulează o singură dată după upgrade.
  */
 function migrateNomenclatorReportsColumn() {
+    beginEditorRun_();
     var sheet = SheetService.getSpreadsheet().getSheetByName(SHEET_NOMENCLATOR);
     if (!sheet) {
         throw new Error('Foaia Nomenclator_Setări lipsește.');
@@ -259,7 +281,7 @@ function migrateNomenclatorReportsColumn() {
  * @param {GoogleAppsScript.Spreadsheet.Sheet} registru
  * @param {GoogleAppsScript.Spreadsheet.Sheet} nomenclator
  */
-function protectHeaders(registru, nomenclator) {
+function protectHeaders_(registru, nomenclator) {
     var me = Session.getEffectiveUser().getEmail();
 
     [registru, nomenclator].forEach(function (sheet) {
@@ -281,6 +303,7 @@ function protectHeaders(registru, nomenclator) {
  * Test: append tranzacție de test.
  */
 function testAppendTransaction() {
+    beginEditorRun_();
     var originalEmail = SheetService.getSpreadsheet()
         .getSheetByName(SHEET_NOMENCLATOR)
         .getRange(2, 4)
@@ -315,6 +338,7 @@ function testAppendTransaction() {
  * Test: categorii pe tip.
  */
 function testCategories() {
+    beginEditorRun_();
     Logger.log('Intrări: ' + JSON.stringify(CategoryService.getCategoriesByTip(TIP_INTRARE)));
     Logger.log('Ieșiri: ' + JSON.stringify(CategoryService.getCategoriesByTip(TIP_IESIRE)));
 }
@@ -323,6 +347,7 @@ function testCategories() {
  * Test: solduri.
  */
 function testBalances() {
+    beginEditorRun_();
     var balances = BalanceService.computeBalances();
     Logger.log('Solduri: ' + JSON.stringify(balances));
 }
@@ -331,17 +356,20 @@ function testBalances() {
  * Test: rapoarte interval luna curentă.
  */
 function testReports() {
+    beginEditorRun_();
     var meta = ReportService.getReportMeta();
     var reports = ReportService.getReports(meta.monthStartIso, meta.todayIso);
     Logger.log('Rapoarte legacy: ' + JSON.stringify(reports));
 }
 
 function testReportFisaLunii() {
+    beginEditorRun_();
     var meta = ReportService.getReportMeta();
     Logger.log(JSON.stringify(ReportService.getFisaLunii(meta.monthStartIso, meta.todayIso)));
 }
 
 function testReportComparativ() {
+    beginEditorRun_();
     var meta = ReportService.getReportMeta();
     var now = new Date();
     var lastYear = new Date(now.getFullYear() - 1, now.getMonth(), 1);
