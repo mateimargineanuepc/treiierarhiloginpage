@@ -1,6 +1,7 @@
 /**
  * Constante globale ContaAPP.
  */
+var SPREADSHEET_ID = '1g2P0SC-qGaBi8_yoWUZUfVfoSAhmkJUKp1Ay-FaeIzI';
 var SHEET_REGISTRU = 'Registru_Central';
 var SHEET_NOMENCLATOR = 'Nomenclator_Setări';
 

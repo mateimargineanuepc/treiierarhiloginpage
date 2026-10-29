@@ -3,11 +3,11 @@
  */
 var SheetService = (function () {
     /**
-     * Returnează spreadsheet-ul activ (proiect legat de Sheet).
+     * Returnează spreadsheet-ul aplicației (după SPREADSHEET_ID).
      * @returns {GoogleAppsScript.Spreadsheet.Spreadsheet}
      */
     function getSpreadsheet() {
-        return SpreadsheetApp.getActiveSpreadsheet();
+        return SpreadsheetApp.openById(SPREADSHEET_ID);
     }
 
     /**

@@ -155,7 +155,7 @@ function apiGetReportIstoricVenituri(categoriesJson, fromIso, toIso) {
  * Creează/inițializează foile și datele seed.
  */
 function setupSheets() {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SheetService.getSpreadsheet();
 
     var registru = ss.getSheetByName(SHEET_REGISTRU);
     if (!registru) {
@@ -207,7 +207,7 @@ function setupSheets() {
  * Rulează o singură dată după upgrade.
  */
 function migrateNomenclatorReportsColumn() {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NOMENCLATOR);
+    var sheet = SheetService.getSpreadsheet().getSheetByName(SHEET_NOMENCLATOR);
     if (!sheet) {
         throw new Error('Foaia Nomenclator_Setări lipsește.');
     }
@@ -250,13 +250,13 @@ function protectHeaders(registru, nomenclator) {
  * Test: append tranzacție de test.
  */
 function testAppendTransaction() {
-    var originalEmail = SpreadsheetApp.getActiveSpreadsheet()
+    var originalEmail = SheetService.getSpreadsheet()
         .getSheetByName(SHEET_NOMENCLATOR)
         .getRange(2, 4)
         .getValue();
 
     var testEmail = Session.getEffectiveUser().getEmail();
-    SpreadsheetApp.getActiveSpreadsheet()
+    SheetService.getSpreadsheet()
         .getSheetByName(SHEET_NOMENCLATOR)
         .getRange(2, 4)
         .setValue(testEmail);
@@ -272,7 +272,7 @@ function testAppendTransaction() {
         });
         Logger.log('testAppendTransaction OK: ' + JSON.stringify(result));
     } finally {
-        SpreadsheetApp.getActiveSpreadsheet()
+        SheetService.getSpreadsheet()
             .getSheetByName(SHEET_NOMENCLATOR)
             .getRange(2, 4)
             .setValue(originalEmail);
