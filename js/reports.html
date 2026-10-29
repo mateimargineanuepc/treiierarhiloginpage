@@ -1,0 +1,1043 @@
+<script>
+var ReportsModule = (function () {
+    'use strict';
+
+    var state = {
+        activeTab: 'fisa',
+        meta: null,
+        loaded: {},
+        chartInstances: [],
+        multiSelects: {},
+        documentClickBound: false,
+        comparativChart: null,
+        comparativMode: null,
+        istoricReport: null,
+    };
+
+    var ISTORIC_INTRARE_CONFIG = {
+        titlePrefix: 'Istoric',
+        chartColor: '#10B981',
+        chartLabel: 'Intrări (RON)',
+        rowTypeClass: 'historic-month-row--intrare',
+        emptyMsg: 'Nicio intrare în această perioadă pentru categoriile selectate.',
+    };
+
+    var ISTORIC_IESIRE_CONFIG = {
+        titlePrefix: 'Istoric',
+        chartColor: '#DC2626',
+        chartLabel: 'Ieșiri (RON)',
+        rowTypeClass: 'historic-month-row--iesire',
+        emptyMsg: 'Nicio ieșire în această perioadă pentru categoriile selectate.',
+    };
+
+    function getIstoricTip() {
+        var el = $('ist-tip');
+        return el && el.value === 'iesire' ? 'iesire' : 'intrare';
+    }
+
+    function getIstoricConfig(tip) {
+        return tip === 'iesire' ? ISTORIC_IESIRE_CONFIG : ISTORIC_INTRARE_CONFIG;
+    }
+
+    function getIstoricCategoriesForTip(tip) {
+        if (!state.meta) {
+            return [];
+        }
+        return tip === 'iesire' ? state.meta.categoriiIesiri : state.meta.categoriiIntrari;
+    }
+
+    function refreshIstoricCategories(selectAll) {
+        var tip = getIstoricTip();
+        var categories = getIstoricCategoriesForTip(tip);
+        if (state.multiSelects.istoric && state.multiSelects.istoric.setCategories) {
+            state.multiSelects.istoric.setCategories(categories, selectAll !== false);
+        }
+    }
+
+    function applyMetaCategories(meta) {
+        state.meta = meta;
+        refreshIstoricCategories(true);
+        populateComparativCategories(meta);
+    }
+
+    function refreshMeta() {
+        return runServer('apiGetReportMeta').then(function (meta) {
+            applyMetaCategories(meta);
+            return meta;
+        });
+    }
+
+    function resetActiveTabContent() {
+        var tab = state.activeTab || 'fisa';
+        if (tab === 'istoric') {
+            resetHistoricTab();
+            return;
+        }
+        if (tab === 'comparativ') {
+            showComparativPlaceholder();
+            return;
+        }
+        if (tab === 'detaliat') {
+            showDetaliatPlaceholder();
+            return;
+        }
+        showFisaPlaceholder();
+    }
+
+    function $(id) {
+        return document.getElementById(id);
+    }
+
+    function runServer(fnName) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        return new Promise(function (resolve, reject) {
+            var runner = google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(function (err) {
+                    reject(new Error(err.message || String(err)));
+                });
+            runner[fnName].apply(runner, args);
+        });
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+    }
+
+    function destroyCharts() {
+        state.chartInstances.forEach(function (chart) {
+            if (chart && chart.destroy) {
+                chart.destroy();
+            }
+        });
+        state.chartInstances = [];
+        state.comparativChart = null;
+    }
+
+    function setContent(html) {
+        destroyCharts();
+        $('reports-tab-content').innerHTML = html;
+    }
+
+    function showError(msg) {
+        setContent('<div class="card"><div class="empty-state" style="color:#C62828">' + escapeHtml(msg) + '</div></div>');
+    }
+
+    function reportSkeletonHtml() {
+        return (
+            '<div class="card">' +
+            '<div class="skeleton skeleton--text" style="width:45%;margin-bottom:20px"></div>' +
+            '<div class="skeleton-grid-2" style="margin-bottom:20px">' +
+            '<div class="skeleton skeleton--card"></div>' +
+            '<div class="skeleton skeleton--card"></div>' +
+            '</div>' +
+            '<div class="skeleton skeleton--chart"></div>' +
+            '<div class="skeleton-stack" style="margin-top:20px">' +
+            '<div class="skeleton skeleton--row"></div>' +
+            '<div class="skeleton skeleton--row"></div>' +
+            '<div class="skeleton skeleton--row"></div>' +
+            '<div class="skeleton skeleton--row" style="width:80%"></div>' +
+            '</div>' +
+            '</div>'
+        );
+    }
+
+    function setLoading() {
+        destroyCharts();
+        $('reports-tab-content').innerHTML = reportSkeletonHtml();
+    }
+
+    function applyMonthPreset(fromId, toId) {
+        if (!state.meta) {
+            return;
+        }
+        $(fromId).value = state.meta.monthStartIso;
+        $(toId).value = state.meta.todayIso;
+    }
+
+    function getPeriodLabels() {
+        var nameA = $('comp-a-name') ? $('comp-a-name').value.trim() : '';
+        var nameB = $('comp-b-name') ? $('comp-b-name').value.trim() : '';
+        return {
+            a: nameA || 'Perioada A',
+            b: nameB || 'Perioada B',
+        };
+    }
+
+    function isCompPeriodBEnabled() {
+        return $('comp-b-enabled') && $('comp-b-enabled').checked;
+    }
+
+    function toggleCompPeriodBSection() {
+        var section = $('comp-b-section');
+        if (!section) {
+            return;
+        }
+        section.classList.toggle('hidden', !isCompPeriodBEnabled());
+    }
+
+    function refreshComparativPeriodLabels() {
+        var labels = getPeriodLabels();
+        document.querySelectorAll('[data-period-a-name]').forEach(function (el) {
+            el.textContent = labels.a;
+        });
+        document.querySelectorAll('[data-period-b-name]').forEach(function (el) {
+            el.textContent = labels.b;
+        });
+        if (!state.comparativChart) {
+            return;
+        }
+        state.comparativChart.data.datasets[0].label = labels.a;
+        if (state.comparativChart.data.datasets.length > 1) {
+            state.comparativChart.data.datasets[1].label = labels.b;
+        }
+        state.comparativChart.update();
+    }
+
+    function normalizeSearchText(str) {
+        return String(str || '').toLowerCase();
+    }
+
+    /**
+     * Dropdown multi-select cu căutare pentru categorii.
+     * @param {string} containerId
+     * @param {string[]} categories
+     * @param {boolean} selectAllInitially
+     * @returns {Object}
+     */
+    function createCategoryMultiSelect(containerId, categories, selectAllInitially) {
+        var root = $(containerId);
+        if (!root) {
+            return null;
+        }
+
+        var categoryList = categories.slice();
+        var selected = {};
+        categoryList.forEach(function (cat) {
+            selected[cat] = selectAllInitially === true;
+        });
+
+        root.className = 'ms-select';
+        root.innerHTML =
+            '<button type="button" class="ms-select__trigger" aria-haspopup="listbox">' +
+            '<span class="ms-select__summary"></span></button>' +
+            '<div class="ms-select__panel hidden">' +
+            '<input type="search" class="ms-select__search" placeholder="Caută categorie..." autocomplete="off">' +
+            '<div class="ms-select__actions">' +
+            '<button type="button" class="btn-text ms-select__all">Selectează tot</button>' +
+            '<button type="button" class="btn-text ms-select__none">Deselectează tot</button>' +
+            '</div>' +
+            '<div class="ms-select__options" role="listbox"></div>' +
+            '</div>';
+
+        var trigger = root.querySelector('.ms-select__trigger');
+        var panel = root.querySelector('.ms-select__panel');
+        var summary = root.querySelector('.ms-select__summary');
+        var searchInput = root.querySelector('.ms-select__search');
+        var optionsEl = root.querySelector('.ms-select__options');
+        var btnAll = root.querySelector('.ms-select__all');
+        var btnNone = root.querySelector('.ms-select__none');
+
+        function updateSummary() {
+            var chosen = categoryList.filter(function (cat) {
+                return selected[cat];
+            });
+            if (!chosen.length) {
+                summary.textContent = 'Nicio categorie selectată';
+                return;
+            }
+            if (chosen.length <= 2) {
+                summary.textContent = chosen.join(', ');
+                return;
+            }
+            summary.textContent = chosen.length + ' categorii selectate';
+        }
+
+        function setAllSelected(checked) {
+            categoryList.forEach(function (cat) {
+                selected[cat] = checked;
+            });
+            renderOptions(searchInput.value);
+            updateSummary();
+        }
+
+        function setCategories(newCategories, selectAll) {
+            categoryList = newCategories.slice();
+            selected = {};
+            categoryList.forEach(function (cat) {
+                selected[cat] = selectAll === true;
+            });
+            closePanel();
+            renderOptions('');
+            updateSummary();
+        }
+
+        function renderOptions(filterText) {
+            var filter = normalizeSearchText(filterText);
+            var visibleCount = 0;
+            optionsEl.innerHTML = '';
+
+            categoryList.forEach(function (cat) {
+                if (filter && normalizeSearchText(cat).indexOf(filter) === -1) {
+                    return;
+                }
+                visibleCount += 1;
+
+                var label = document.createElement('label');
+                label.className = 'ms-select__option';
+                label.setAttribute('data-value', cat);
+
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!selected[cat];
+                cb.addEventListener('change', function () {
+                    selected[cat] = cb.checked;
+                    updateSummary();
+                });
+
+                var text = document.createElement('span');
+                text.className = 'ms-select__option-text';
+                text.textContent = cat;
+
+                label.appendChild(cb);
+                label.appendChild(text);
+                optionsEl.appendChild(label);
+            });
+
+            if (visibleCount === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'ms-select__empty';
+                empty.textContent = 'Nicio categorie găsită.';
+                optionsEl.appendChild(empty);
+            }
+        }
+
+        function openPanel() {
+            document.querySelectorAll('.ms-select--open').forEach(function (el) {
+                if (el !== root) {
+                    el.classList.remove('ms-select--open');
+                    el.querySelector('.ms-select__panel').classList.add('hidden');
+                }
+            });
+            root.classList.add('ms-select--open');
+            panel.classList.remove('hidden');
+            searchInput.value = '';
+            renderOptions('');
+            searchInput.focus();
+        }
+
+        function closePanel() {
+            root.classList.remove('ms-select--open');
+            panel.classList.add('hidden');
+            searchInput.value = '';
+            renderOptions('');
+        }
+
+        trigger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (root.classList.contains('ms-select--open')) {
+                closePanel();
+            } else {
+                openPanel();
+            }
+        });
+
+        panel.addEventListener('click', function (e) {
+            e.stopPropagation();
+        });
+
+        searchInput.addEventListener('input', function () {
+            renderOptions(searchInput.value);
+        });
+
+        btnAll.addEventListener('click', function () {
+            setAllSelected(true);
+        });
+
+        btnNone.addEventListener('click', function () {
+            setAllSelected(false);
+        });
+
+        renderOptions('');
+        updateSummary();
+
+        return {
+            getSelected: function () {
+                return categoryList.filter(function (cat) {
+                    return selected[cat];
+                });
+            },
+            selectAll: function () {
+                setAllSelected(true);
+            },
+            selectNone: function () {
+                setAllSelected(false);
+            },
+            setCategories: setCategories,
+            close: closePanel,
+        };
+    }
+
+    function bindMultiSelectOutsideClick() {
+        if (state.documentClickBound) {
+            return;
+        }
+        document.addEventListener('click', function () {
+            Object.keys(state.multiSelects).forEach(function (key) {
+                if (state.multiSelects[key] && state.multiSelects[key].close) {
+                    state.multiSelects[key].close();
+                }
+            });
+        });
+        state.documentClickBound = true;
+    }
+
+    function getDateRange(fromId, toId) {
+        return {
+            from: $(fromId).value,
+            to: $(toId).value,
+        };
+    }
+
+    function renderFisa(data) {
+        if (!data.hasData) {
+            setContent('<div class="card"><div class="empty-state">Nu există înregistrări în perioada selectată.</div></div>');
+            return;
+        }
+
+        function columnHtml(title, items, totalLabel, totalFormatted, colorClass) {
+            var html = '<div class="fisa-column"><h3 class="fisa-column__title ' + colorClass + '">' + escapeHtml(title) + '</h3>';
+            html += '<table class="report-table"><tbody>';
+            items.forEach(function (row) {
+                html += '<tr><td>' + escapeHtml(row.categorie) + '</td><td class="fisa-amount">' + escapeHtml(row.totalFormatted) + ' RON</td></tr>';
+            });
+            html += '<tr class="total-row"><td><strong>' + escapeHtml(totalLabel) + '</strong></td><td><strong>' + escapeHtml(totalFormatted) + ' RON</strong></td></tr>';
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        var excedentClass = data.isExcedent ? 'excedent--positive' : 'excedent--negative';
+        var excedentLabel = data.isExcedent ? 'Excedent' : 'Deficit';
+
+        var html = '<div class="card"><p class="card__title">Fișa perioadei ' + escapeHtml(data.fromLabel) + ' – ' + escapeHtml(data.toLabel) + '</p>';
+        html += '<div class="fisa-columns">';
+        html += columnHtml('INTRĂRI', data.intrari, 'Total Încasări', data.totalIntrariFormatted, 'text-intrare');
+        html += columnHtml('IEȘIRI', data.iesiri, 'Total Cheltuieli', data.totalIesiriFormatted, 'text-iesire');
+        html += '</div>';
+        html += '<div class="excedent-row ' + excedentClass + '">' + excedentLabel + ' Lună: ' + escapeHtml(data.excedentFormatted) + ' RON</div>';
+        html += '</div>';
+
+        setContent(html);
+    }
+
+    function renderIstoricReport(data, config) {
+        if (!data.hasData) {
+            setContent('<div class="card"><div class="empty-state">' + escapeHtml(config.emptyMsg) + '</div></div>');
+            return;
+        }
+
+        state.istoricReport = {
+            data: data,
+            config: config,
+            activeMonthKey: null,
+        };
+
+        var title = config.titlePrefix + ': ' + data.categories.join(', ');
+        var html = '<div class="card" id="historic-report-card">';
+        html += '<p class="card__title">' + escapeHtml(title) + '</p>';
+        html += '<div class="chart-container"><canvas id="chart-istoric-monthly"></canvas></div>';
+        html += '<p class="card__title" style="margin-top:16px;font-size:1rem">Sumar pe luni</p>';
+        html += '<p class="card__subtitle">Apăsați pe o lună pentru a vedea tranzacțiile</p>';
+        html += '<table class="report-table historic-monthly-table"><thead><tr><th>Lună</th><th>Total</th></tr></thead><tbody>';
+
+        data.monthlySummary.forEach(function (row) {
+            html += '<tr class="historic-month-row ' + config.rowTypeClass + '" data-month-key="' + escapeHtml(row.key) + '" tabindex="0" role="button">';
+            html += '<td>' + escapeHtml(row.label) + '</td>';
+            html += '<td class="historic-month-total">' + escapeHtml(row.totalFormatted) + ' RON</td></tr>';
+        });
+
+        html += '</tbody></table>';
+        html += '<div id="historic-month-detail" class="historic-month-detail hidden"></div>';
+        html += '</div>';
+
+        setContent(html);
+        bindHistoricMonthRows();
+
+        if (typeof Chart !== 'undefined' && data.chart.labels.length) {
+            var ctx = $('chart-istoric-monthly');
+            if (ctx) {
+                var chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.chart.labels,
+                        datasets: [{
+                            label: config.chartLabel,
+                            data: data.chart.values,
+                            backgroundColor: config.chartColor,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                    },
+                });
+                state.chartInstances.push(chart);
+            }
+        }
+    }
+
+    function bindHistoricMonthRows() {
+        document.querySelectorAll('.historic-month-row').forEach(function (row) {
+            row.addEventListener('click', function () {
+                showHistoricMonthDetail(row.getAttribute('data-month-key'));
+            });
+            row.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    showHistoricMonthDetail(row.getAttribute('data-month-key'));
+                }
+            });
+        });
+    }
+
+    function showHistoricMonthDetail(monthKey) {
+        var report = state.istoricReport;
+        if (!report || !report.data) {
+            return;
+        }
+
+        var isSame = report.activeMonthKey === monthKey;
+        var detailEl = $('historic-month-detail');
+        if (!detailEl) {
+            return;
+        }
+
+        document.querySelectorAll('.historic-month-row').forEach(function (row) {
+            var isActive = row.getAttribute('data-month-key') === monthKey && !isSame;
+            row.classList.toggle('historic-month-row--active', isActive);
+        });
+
+        if (isSame) {
+            report.activeMonthKey = null;
+            detailEl.classList.add('hidden');
+            detailEl.innerHTML = '';
+            return;
+        }
+
+        report.activeMonthKey = monthKey;
+        var monthLabel = monthKey;
+        report.data.monthlySummary.forEach(function (monthRow) {
+            if (monthRow.key === monthKey) {
+                monthLabel = monthRow.label;
+            }
+        });
+
+        var txs = report.data.transactions.filter(function (tx) {
+            return tx.monthKey === monthKey;
+        });
+        var showCategoryCol = report.data.categories.length > 1;
+
+        var html = '<p class="card__title" style="font-size:1rem">Detalii ' + escapeHtml(monthLabel) + '</p>';
+        html += '<table class="report-table"><thead><tr>';
+        if (showCategoryCol) {
+            html += '<th>Categorie</th>';
+        }
+        html += '<th>Dată</th><th>Sumă</th><th>Explicație</th><th>Operat de</th></tr></thead><tbody>';
+
+        if (!txs.length) {
+            var colSpan = showCategoryCol ? 5 : 4;
+            html += '<tr><td colspan="' + colSpan + '">Nicio înregistrare.</td></tr>';
+        } else {
+            txs.forEach(function (tx) {
+                html += '<tr>';
+                if (showCategoryCol) {
+                    html += '<td>' + escapeHtml(tx.categorie) + '</td>';
+                }
+                html += '<td>' + escapeHtml(tx.date) + '</td><td>' + escapeHtml(tx.amount) + '</td>';
+                html += '<td>' + escapeHtml(tx.explanation) + '</td><td>' + escapeHtml(tx.operatDe) + '</td></tr>';
+            });
+        }
+
+        html += '</tbody></table>';
+        detailEl.innerHTML = html;
+        detailEl.classList.remove('hidden');
+        detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderComparativ(data) {
+        if (!data.categories || !data.categories.length) {
+            setContent('<div class="card"><div class="empty-state">Nu există categorii selectate.</div></div>');
+            return;
+        }
+
+        if (!data.hasData) {
+            setContent('<div class="card"><div class="empty-state">Nu există sume în perioada selectată pentru categoriile alese.</div></div>');
+            return;
+        }
+
+        var periodLabels = getPeriodLabels();
+        var isDual = data.mode === 'dual';
+        state.comparativMode = data.mode;
+
+        var html = '<div class="card">';
+        html += '<p class="card__title">' + (isDual ? 'Comparativ pe categorii (două perioade)' : 'Comparativ categorii în aceeași perioadă') + '</p>';
+        html += '<p class="card__subtitle"><span data-period-a-name>' + escapeHtml(periodLabels.a) + '</span>';
+        html += ': ' + escapeHtml(data.periodA.fromLabel) + ' – ' + escapeHtml(data.periodA.toLabel);
+
+        if (isDual && data.periodB) {
+            html += ' · <span data-period-b-name>' + escapeHtml(periodLabels.b) + '</span>';
+            html += ': ' + escapeHtml(data.periodB.fromLabel) + ' – ' + escapeHtml(data.periodB.toLabel);
+        }
+
+        html += '</p>';
+
+        if (isDual) {
+            html += '<div class="compare-chart-legend">';
+            html += '<span class="compare-legend-item compare-legend-item--intrare-a">Intrări · <span data-period-a-name>' + escapeHtml(periodLabels.a) + '</span></span>';
+            html += '<span class="compare-legend-item compare-legend-item--intrare-b">Intrări · <span data-period-b-name>' + escapeHtml(periodLabels.b) + '</span></span>';
+            html += '<span class="compare-legend-item compare-legend-item--iesire-a">Ieșiri · <span data-period-a-name>' + escapeHtml(periodLabels.a) + '</span></span>';
+            html += '<span class="compare-legend-item compare-legend-item--iesire-b">Ieșiri · <span data-period-b-name>' + escapeHtml(periodLabels.b) + '</span></span>';
+            html += '</div>';
+        } else {
+            html += '<div class="compare-chart-legend">';
+            html += '<span class="compare-legend-item compare-legend-item--intrare-a">Intrări</span>';
+            html += '<span class="compare-legend-item compare-legend-item--iesire-a">Ieșiri</span>';
+            html += '</div>';
+        }
+
+        html += '<div class="chart-container chart-container--compare"><canvas id="chart-comparativ"></canvas></div>';
+        html += '<table class="report-table compare-table"><thead><tr><th>Categorie</th><th>Tip</th>';
+        html += '<th><span data-period-a-name>' + escapeHtml(periodLabels.a) + '</span></th>';
+
+        if (isDual) {
+            html += '<th><span data-period-b-name>' + escapeHtml(periodLabels.b) + '</span></th>';
+            html += '<th>Diferență</th><th>%</th>';
+        }
+
+        html += '</tr></thead><tbody>';
+
+        data.categories.forEach(function (row) {
+            var tipClass = row.tip === 'Intrare' ? 'compare-tip--intrare' : 'compare-tip--iesire';
+            html += '<tr><td><strong>' + escapeHtml(row.categorie) + '</strong></td>';
+            html += '<td class="' + tipClass + '">' + escapeHtml(row.tip) + '</td>';
+            html += '<td>' + escapeHtml(row.periodAFormatted) + ' RON</td>';
+
+            if (isDual) {
+                html += '<td>' + escapeHtml(row.periodBFormatted) + ' RON</td>';
+                html += '<td>' + escapeHtml(row.diffValue) + ' RON</td>';
+                html += '<td>' + escapeHtml(row.diffPercent) + '</td>';
+            }
+
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        setContent(html);
+
+        if (typeof Chart === 'undefined') {
+            return;
+        }
+
+        var ctx = $('chart-comparativ');
+        if (!ctx) {
+            return;
+        }
+
+        var chartConfig;
+
+        if (isDual) {
+            var colorsA = data.categories.map(function (row) {
+                return row.tip === 'Intrare' ? '#10B981' : '#DC2626';
+            });
+            var colorsB = data.categories.map(function (row) {
+                return row.tip === 'Intrare' ? '#34D399' : '#F87171';
+            });
+            chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: data.categories.map(function (row) { return row.categorie; }),
+                    datasets: [
+                        {
+                            label: periodLabels.a,
+                            data: data.categories.map(function (row) { return row.periodA; }),
+                            backgroundColor: colorsA,
+                        },
+                        {
+                            label: periodLabels.b,
+                            data: data.categories.map(function (row) { return row.periodB; }),
+                            backgroundColor: colorsB,
+                        },
+                    ],
+                },
+                options: buildComparativChartOptions(data.categories),
+            };
+        } else {
+            var colors = data.categories.map(function (row) {
+                return row.tip === 'Intrare' ? '#10B981' : '#DC2626';
+            });
+            chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: data.categories.map(function (row) { return row.categorie; }),
+                    datasets: [{
+                        label: periodLabels.a,
+                        data: data.categories.map(function (row) { return row.periodA; }),
+                        backgroundColor: colors,
+                    }],
+                },
+                options: buildComparativChartOptions(data.categories),
+            };
+        }
+
+        var chart = new Chart(ctx, chartConfig);
+        state.comparativChart = chart;
+        state.chartInstances.push(chart);
+    }
+
+    function buildComparativChartOptions(categories) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            var row = categories[context.dataIndex];
+                            var tipLabel = row && row.tip === 'Intrare' ? 'Intrări' : 'Ieșiri';
+                            var value = context.parsed.y;
+                            return tipLabel + ' · ' + context.dataset.label + ': ' + value.toFixed(2) + ' RON';
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { maxRotation: 45, minRotation: 0 },
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function (value) {
+                            return value + ' RON';
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    function showHistoricPlaceholder() {
+        destroyCharts();
+        state.istoricReport = null;
+        $('reports-tab-content').innerHTML =
+            '<div class="card"><div class="empty-state">Selectați categorii și perioada, apoi apăsați Generează.</div></div>';
+    }
+
+    function showFisaPlaceholder() {
+        destroyCharts();
+        $('reports-tab-content').innerHTML =
+            '<div class="card"><div class="empty-state">Selectați perioada, apoi apăsați Generează.</div></div>';
+    }
+
+    function showDetaliatPlaceholder() {
+        destroyCharts();
+        $('reports-tab-content').innerHTML =
+            '<div class="card"><div class="empty-state">Selectați perioada, apoi apăsați Generează.</div></div>';
+    }
+
+    function resetHistoricTab() {
+        if ($('ist-tip')) {
+            $('ist-tip').value = 'intrare';
+        }
+        refreshIstoricCategories(true);
+        showHistoricPlaceholder();
+    }
+
+    function onIstoricTipChange() {
+        refreshIstoricCategories(true);
+        showHistoricPlaceholder();
+    }
+
+    function showComparativPlaceholder() {
+        destroyCharts();
+        state.comparativMode = null;
+        $('reports-tab-content').innerHTML =
+            '<div class="card"><div class="empty-state">Selectați categorii și perioada, apoi apăsați Compară.</div></div>';
+    }
+
+    function setComparePanelSelection(containerId, selectAll) {
+        document.querySelectorAll('#' + containerId + ' input[type=checkbox]').forEach(function (cb) {
+            cb.checked = selectAll;
+        });
+    }
+
+    function renderCategorySection(title, categories, emptyMessage) {
+        var html = '<div class="card"><p class="card__title">' + title + '</p>';
+        if (!categories || categories.length === 0) {
+            html += '<div class="empty-state">' + emptyMessage + '</div></div>';
+            return html;
+        }
+        categories.forEach(function (group) {
+            html += '<div class="report-category-group"><div class="report-category-header">';
+            html += '<strong>' + escapeHtml(group.categorie) + '</strong>';
+            html += '<span class="report-category-total">' + escapeHtml(group.total) + ' RON</span></div>';
+            html += '<table class="report-table"><thead><tr><th>Dată</th><th>Sumă</th><th>Modalitate</th><th>Explicație</th></tr></thead><tbody>';
+            group.items.forEach(function (item) {
+                html += '<tr><td>' + escapeHtml(item.date) + '</td><td>' + escapeHtml(item.amount) + '</td>';
+                html += '<td>' + escapeHtml(item.sursa || '') + '</td><td>' + escapeHtml(item.explanation) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function renderDetaliat(data) {
+        if (!data.hasData) {
+            setContent('<div class="card"><div class="empty-state">Nu există înregistrări în perioada selectată.</div></div>');
+            return;
+        }
+
+        var html = '<div class="card"><p class="card__title">Rezumat ' + escapeHtml(data.fromLabel) + ' – ' + escapeHtml(data.toLabel) + '</p>';
+        html += '<div class="report-summary">';
+        html += '<div class="report-summary__item"><div class="report-summary__label">Total Intrări</div><div class="report-summary__value text-intrare">' + escapeHtml(data.summary.totalIntrari) + ' RON</div></div>';
+        html += '<div class="report-summary__item"><div class="report-summary__label">Total Ieșiri</div><div class="report-summary__value text-iesire">' + escapeHtml(data.summary.totalIesiri) + ' RON</div></div>';
+        html += '</div></div>';
+
+        html += renderCategorySection('Intrări pe categorii', data.intrariByCategory, 'Nicio intrare.');
+        html += renderCategorySection('Ieșiri pe categorii', data.iesiriByCategory, 'Nicio ieșire.');
+
+        html += '<div class="card"><p class="card__title">Cheltuieli Auto</p>';
+        if (!data.autoExpenses.items.length) {
+            html += '<div class="empty-state">Nicio cheltuială auto.</div>';
+        } else {
+            html += '<table class="report-table"><tbody>';
+            data.autoExpenses.items.forEach(function (item) {
+                html += '<tr><td>' + escapeHtml(item.date) + '</td><td>' + escapeHtml(item.amount) + '</td><td>' + escapeHtml(item.explanation) + '</td></tr>';
+            });
+            html += '<tr class="total-row"><td>TOTAL</td><td>' + escapeHtml(data.autoExpenses.total) + ' RON</td><td></td></tr></tbody></table>';
+        }
+        html += '</div>';
+
+        html += '<div class="card"><p class="card__title">Comparativ Pangar</p><table class="report-table"><tbody>';
+        html += '<tr><td>Pangar 1</td><td><strong>' + escapeHtml(data.pangarComparison.pangar1Total) + ' RON</strong></td></tr>';
+        html += '<tr><td>Cort / Pangar 2</td><td><strong>' + escapeHtml(data.pangarComparison.pangar2Total) + ' RON</strong></td></tr>';
+        html += '</tbody></table></div>';
+
+        setContent(html);
+    }
+
+    function loadFisa() {
+        var range = getDateRange('fisa-from', 'fisa-to');
+        setLoading();
+        runServer('apiGetReportFisaLunii', range.from, range.to)
+            .then(renderFisa)
+            .catch(function (err) { showError(err.message); });
+    }
+
+    function loadIstoric() {
+        var tip = getIstoricTip();
+        var config = getIstoricConfig(tip);
+        var ms = state.multiSelects.istoric;
+        var cats = ms ? ms.getSelected() : [];
+        if (!cats.length) {
+            showError(tip === 'iesire' ? 'Selectați cel puțin o categorie de ieșire.' : 'Selectați cel puțin o categorie de intrări.');
+            return;
+        }
+
+        var range = getDateRange('ist-from', 'ist-to');
+        var apiFn = tip === 'iesire' ? 'apiGetReportCheltuieli' : 'apiGetReportIstoricVenituri';
+        setLoading();
+        runServer(apiFn, JSON.stringify(cats), range.from, range.to)
+            .then(function (data) {
+                renderIstoricReport(data, config);
+            })
+            .catch(function (err) { showError(err.message); });
+    }
+
+    function getSelectedComparativCategories() {
+        var intrari = [];
+        var iesiri = [];
+        document.querySelectorAll('#comp-categories-intrari input[type=checkbox]:checked').forEach(function (cb) {
+            intrari.push(cb.value);
+        });
+        document.querySelectorAll('#comp-categories-iesiri input[type=checkbox]:checked').forEach(function (cb) {
+            iesiri.push(cb.value);
+        });
+        return { intrari: intrari, iesiri: iesiri };
+    }
+
+    function loadComparativ() {
+        var selection = getSelectedComparativCategories();
+        if (!selection.intrari.length && !selection.iesiri.length) {
+            showError('Selectați cel puțin o categorie de intrări sau ieșiri.');
+            return;
+        }
+
+        setLoading();
+        var payload = {
+            intrari: selection.intrari,
+            iesiri: selection.iesiri,
+            includePeriodB: isCompPeriodBEnabled(),
+        };
+
+        runServer(
+            'apiGetReportComparativ',
+            $('comp-a-from').value,
+            $('comp-a-to').value,
+            isCompPeriodBEnabled() ? $('comp-b-from').value : '',
+            isCompPeriodBEnabled() ? $('comp-b-to').value : '',
+            JSON.stringify(payload)
+        )
+            .then(renderComparativ)
+            .catch(function (err) { showError(err.message); });
+    }
+
+    function loadDetaliat() {
+        var range = getDateRange('det-from', 'det-to');
+        setLoading();
+        runServer('apiGetReports', range.from, range.to)
+            .then(renderDetaliat)
+            .catch(function (err) { showError(err.message); });
+    }
+
+    function showFiltersForTab(tab) {
+        ['filters-fisa', 'filters-comparativ', 'filters-istoric', 'filters-detaliat'].forEach(function (id) {
+            $(id).classList.add('hidden');
+        });
+        $('filters-' + tab).classList.remove('hidden');
+    }
+
+    function switchReportTab(tab) {
+        state.activeTab = tab;
+        document.querySelectorAll('.report-tab').forEach(function (btn) {
+            btn.classList.toggle('report-tab--active', btn.getAttribute('data-tab') === tab);
+        });
+        showFiltersForTab(tab);
+
+        refreshMeta()
+            .then(resetActiveTabContent)
+            .catch(function (err) {
+                showError(err.message);
+            });
+    }
+
+    function populateCategoryCheckboxes(containerId, categories, defaultChecked) {
+        var container = $(containerId);
+        if (!container) {
+            return;
+        }
+        container.innerHTML = '';
+        categories.forEach(function (cat) {
+            var label = document.createElement('label');
+            label.className = 'category-checkbox';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = cat;
+            cb.checked = defaultChecked !== false;
+            var text = document.createElement('span');
+            text.textContent = cat;
+            label.appendChild(cb);
+            label.appendChild(text);
+            container.appendChild(label);
+        });
+    }
+
+    function populateComparativCategories(meta) {
+        populateCategoryCheckboxes('comp-categories-intrari', meta.categoriiIntrari, false);
+        populateCategoryCheckboxes('comp-categories-iesiri', meta.categoriiIesiri, false);
+    }
+
+    function initMultiSelects(meta) {
+        state.multiSelects.istoric = createCategoryMultiSelect('ist-categories-ms', meta.categoriiIntrari, true);
+        bindMultiSelectOutsideClick();
+    }
+
+    function bindEvents() {
+        document.querySelectorAll('.report-tab').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                switchReportTab(btn.getAttribute('data-tab'));
+            });
+        });
+
+        $('fisa-preset-month').addEventListener('click', function () { applyMonthPreset('fisa-from', 'fisa-to'); });
+        $('fisa-generate').addEventListener('click', loadFisa);
+
+        $('ist-tip').addEventListener('change', onIstoricTipChange);
+        $('ist-preset-month').addEventListener('click', function () { applyMonthPreset('ist-from', 'ist-to'); });
+        $('ist-generate').addEventListener('click', loadIstoric);
+
+        $('comp-generate').addEventListener('click', loadComparativ);
+
+        $('comp-a-name').addEventListener('input', refreshComparativPeriodLabels);
+        $('comp-b-name').addEventListener('input', refreshComparativPeriodLabels);
+
+        $('comp-b-enabled').addEventListener('change', toggleCompPeriodBSection);
+
+        document.querySelectorAll('[data-comp-select]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var containerId = btn.getAttribute('data-comp-select');
+                var selectAll = btn.getAttribute('data-select') === 'all';
+                setComparePanelSelection(containerId, selectAll);
+            });
+        });
+
+        $('det-preset-month').addEventListener('click', function () { applyMonthPreset('det-from', 'det-to'); });
+        $('det-generate').addEventListener('click', loadDetaliat);
+    }
+
+    function initDefaults() {
+        if (!state.meta) {
+            return;
+        }
+        ['fisa-from', 'ist-from', 'det-from', 'comp-a-from'].forEach(function (id) {
+            $(id).value = state.meta.monthStartIso;
+        });
+        ['fisa-to', 'ist-to', 'det-to', 'comp-a-to'].forEach(function (id) {
+            $(id).value = state.meta.todayIso;
+        });
+
+        var lastYearStart = state.meta.todayIso.substring(0, 4);
+        var yearNum = parseInt(lastYearStart, 10) - 1;
+        var month = state.meta.todayIso.substring(5, 7);
+        $('comp-b-from').value = yearNum + '-' + month + '-01';
+        $('comp-b-to').value = yearNum + '-' + state.meta.todayIso.substring(5, 10);
+
+        if ($('comp-b-enabled')) {
+            $('comp-b-enabled').checked = false;
+        }
+        toggleCompPeriodBSection();
+    }
+
+    function init() {
+        return runServer('apiGetReportMeta')
+            .then(function (meta) {
+                initMultiSelects(meta);
+                applyMetaCategories(meta);
+                initDefaults();
+                bindEvents();
+                showFisaPlaceholder();
+            })
+            .catch(function (err) {
+                showError(err.message);
+            });
+    }
+
+    function refresh() {
+        return refreshMeta()
+            .then(resetActiveTabContent)
+            .catch(function (err) {
+                showError(err.message);
+            });
+    }
+
+    return {
+        init: init,
+        refresh: refresh,
+    };
+})();
+</script>

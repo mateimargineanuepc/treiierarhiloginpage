@@ -1,0 +1,557 @@
+<script>
+(function () {
+    'use strict';
+
+    var ADD_CATEGORY_OPTION = '+ Adaugă categorie nouă';
+    var AMOUNT_REGEX = /^\d+(\.\d{0,2})?$/;
+
+    var state = {
+        user: null,
+        currentView: 'entry',
+        form: {
+            dataTranzactie: '',
+            tip: '',
+            sursa: '',
+            categorie: '',
+            suma: '',
+            explicatie: '',
+        },
+        reportsInitialized: false,
+        saving: false,
+        reportsInitialized: false,
+    };
+
+    var els = {};
+
+    function $(id) {
+        return document.getElementById(id);
+    }
+
+    function todayIso() {
+        var d = new Date();
+        var m = String(d.getMonth() + 1).padStart(2, '0');
+        var day = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + m + '-' + day;
+    }
+
+    function showSnackbar(message, isError) {
+        var snackbar = $('snackbar');
+        snackbar.textContent = message;
+        snackbar.className = 'snackbar snackbar--visible' + (isError ? ' snackbar--error' : '');
+        setTimeout(function () {
+            snackbar.classList.remove('snackbar--visible');
+        }, 3500);
+    }
+
+    function runServer(fnName) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        return new Promise(function (resolve, reject) {
+            var runner = google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(function (err) {
+                    reject(new Error(err.message || String(err)));
+                });
+            runner[fnName].apply(runner, args);
+        });
+    }
+
+    function getInitials(name) {
+        if (!name) {
+            return '?';
+        }
+        var parts = name.trim().split(/\s+/);
+        if (parts.length >= 2) {
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+        return name.substring(0, 2).toUpperCase();
+    }
+
+    function updateUserDisplay(name) {
+        if (els.topBarUser) {
+            els.topBarUser.textContent = name || '';
+        }
+        var sidebarName = $('sidebar-user-name');
+        var sidebarAvatar = $('sidebar-avatar');
+        if (sidebarName) {
+            sidebarName.textContent = name || '—';
+        }
+        if (sidebarAvatar) {
+            sidebarAvatar.textContent = getInitials(name);
+        }
+    }
+
+    function showBalanceSkeletons() {
+        if (els.balanceCash) {
+            els.balanceCash.innerHTML = '<span class="skeleton skeleton--text-lg" style="display:inline-block;width:120px"></span>';
+        }
+        if (els.balanceBank) {
+            els.balanceBank.innerHTML = '<span class="skeleton skeleton--text-lg" style="display:inline-block;width:120px"></span>';
+        }
+    }
+
+    function cacheElements() {
+        els.loadingView = $('loading-view');
+        els.appRoot = $('app-root');
+        els.topBarTitle = $('top-bar-title');
+        els.topBarUser = $('top-bar-user');
+        els.appContainer = $('app-container');
+        els.entryView = $('entry-view');
+        els.reportsView = $('reports-view');
+        els.unauthorizedView = $('unauthorized-view');
+        els.drawer = $('drawer');
+        els.drawerOverlay = $('drawer-overlay');
+        els.snackbar = $('snackbar');
+        els.fieldDate = $('field-date');
+        els.btnIntrare = $('btn-intrare');
+        els.btnIesire = $('btn-iesire');
+        els.btnNumerar = $('btn-numerar');
+        els.btnBancar = $('btn-bancar');
+        els.fieldCategorie = $('field-categorie');
+        els.fieldSuma = $('field-suma');
+        els.fieldExplicatie = $('field-explicatie');
+        els.btnSave = $('btn-save');
+        els.balanceCash = $('balance-cash');
+        els.balanceBank = $('balance-bank');
+        els.categoryDialog = $('category-dialog-overlay');
+        els.newCategoryName = $('new-category-name');
+    }
+
+    function enableSection(sectionId) {
+        var section = $(sectionId);
+        if (section) {
+            section.classList.remove('card--disabled');
+        }
+    }
+
+    function updateFormProgress() {
+        if (state.form.dataTranzactie) {
+            enableSection('section-tip');
+        }
+        if (state.form.tip) {
+            enableSection('section-sursa');
+        }
+        if (state.form.sursa) {
+            enableSection('section-categorie');
+            els.fieldCategorie.disabled = false;
+        }
+        if (state.form.categorie && state.form.categorie !== ADD_CATEGORY_OPTION) {
+            enableSection('section-suma');
+            els.fieldSuma.disabled = false;
+        }
+        if (state.form.suma && AMOUNT_REGEX.test(state.form.suma) && parseFloat(state.form.suma) > 0) {
+            enableSection('section-explicatie');
+            els.fieldExplicatie.disabled = false;
+        }
+        if (state.form.explicatie.trim()) {
+            enableSection('section-save');
+        }
+        updateSaveButton();
+    }
+
+    function updateSaveButton() {
+        var valid =
+            state.form.dataTranzactie &&
+            state.form.tip &&
+            state.form.sursa &&
+            state.form.categorie &&
+            state.form.categorie !== ADD_CATEGORY_OPTION &&
+            AMOUNT_REGEX.test(state.form.suma) &&
+            parseFloat(state.form.suma) > 0 &&
+            state.form.explicatie.trim().length > 0 &&
+            !state.saving;
+
+        els.btnSave.disabled = !valid;
+    }
+
+    function setTip(tip) {
+        state.form.tip = tip;
+        state.form.categorie = '';
+        els.btnIntrare.className = 'btn-choice' + (tip === 'Intrare' ? ' btn-choice--selected-intrare' : '');
+        els.btnIesire.className = 'btn-choice' + (tip === 'Ieșire' ? ' btn-choice--selected-iesire' : '');
+        loadCategories().catch(function (err) {
+            showSnackbar(err.message, true);
+        });
+        updateFormProgress();
+    }
+
+    function setSursa(sursa) {
+        state.form.sursa = sursa;
+        els.btnNumerar.className = 'btn-choice' + (sursa === 'Numerar' ? ' btn-choice--selected-neutral' : '');
+        els.btnBancar.className = 'btn-choice' + (sursa === 'Cont Bancar' ? ' btn-choice--selected-neutral' : '');
+        updateFormProgress();
+    }
+
+    /**
+     * Încarcă categoriile pentru tipul curent.
+     * @param {string} [selectAfterLoad] - Categorie de selectat după încărcare
+     * @returns {Promise<string[]>}
+     */
+    function loadCategories(selectAfterLoad) {
+        if (!state.form.tip) {
+            return Promise.resolve([]);
+        }
+
+        return runServer('apiGetCategoriesByTip', state.form.tip)
+            .then(function (categories) {
+                els.fieldCategorie.innerHTML = '<option value="">— Selectați —</option>';
+                categories.forEach(function (cat) {
+                    var opt = document.createElement('option');
+                    opt.value = cat;
+                    opt.textContent = cat;
+                    els.fieldCategorie.appendChild(opt);
+                });
+                var addOpt = document.createElement('option');
+                addOpt.value = ADD_CATEGORY_OPTION;
+                addOpt.textContent = ADD_CATEGORY_OPTION;
+                els.fieldCategorie.appendChild(addOpt);
+
+                var toSelect = selectAfterLoad || '';
+                if (!toSelect) {
+                    var lastCat = localStorage.getItem('conta_last_category_' + state.form.tip);
+                    if (lastCat && categories.indexOf(lastCat) !== -1) {
+                        toSelect = lastCat;
+                    }
+                }
+
+                if (toSelect && categories.indexOf(toSelect) !== -1) {
+                    els.fieldCategorie.value = toSelect;
+                    state.form.categorie = toSelect;
+                } else {
+                    state.form.categorie = '';
+                }
+
+                updateFormProgress();
+                return categories;
+            });
+    }
+
+    function resetForm() {
+        state.form = {
+            dataTranzactie: todayIso(),
+            tip: '',
+            sursa: '',
+            categorie: '',
+            suma: '',
+            explicatie: '',
+        };
+
+        els.fieldDate.value = state.form.dataTranzactie;
+        els.btnIntrare.className = 'btn-choice';
+        els.btnIesire.className = 'btn-choice';
+        els.btnNumerar.className = 'btn-choice';
+        els.btnBancar.className = 'btn-choice';
+        els.fieldCategorie.innerHTML = '<option value="">— Selectați tipul mai întâi —</option>';
+        els.fieldCategorie.disabled = true;
+        els.fieldSuma.value = '';
+        els.fieldSuma.disabled = true;
+        els.fieldExplicatie.value = '';
+        els.fieldExplicatie.disabled = true;
+
+        ['section-tip', 'section-sursa', 'section-categorie', 'section-suma', 'section-explicatie', 'section-save'].forEach(function (id, index) {
+            if (index > 0) {
+                $(id).classList.add('card--disabled');
+            }
+        });
+
+        enableSection('section-date');
+        updateFormProgress();
+    }
+
+    function loadBalances() {
+        if (!state.user || !state.user.canAccessReports) {
+            return Promise.resolve();
+        }
+
+        showBalanceSkeletons();
+
+        return runServer('apiGetBalances')
+            .then(function (balances) {
+                els.balanceCash.textContent = balances.cashFormatted + ' RON';
+                els.balanceBank.textContent = balances.bankFormatted + ' RON';
+            })
+            .catch(function (err) {
+                els.balanceCash.textContent = '—';
+                els.balanceBank.textContent = '—';
+                console.warn('Solduri:', err.message);
+            });
+    }
+
+    function saveTransaction() {
+        if (els.btnSave.disabled || state.saving) {
+            return;
+        }
+
+        state.saving = true;
+        els.btnSave.disabled = true;
+        els.btnSave.textContent = 'Se salvează...';
+
+        runServer('apiAppendTransaction', {
+            dataTranzactie: state.form.dataTranzactie,
+            tip: state.form.tip,
+            sursa: state.form.sursa,
+            categorie: state.form.categorie,
+            suma: state.form.suma,
+            explicatie: state.form.explicatie.trim(),
+        })
+            .then(function (result) {
+                localStorage.setItem('conta_last_category_' + state.form.tip, state.form.categorie);
+                showSnackbar('Tranzacția #' + result.id + ' a fost salvată.');
+                resetForm();
+                return loadBalances();
+            })
+            .catch(function (err) {
+                showSnackbar(err.message, true);
+            })
+            .finally(function () {
+                state.saving = false;
+                els.btnSave.textContent = 'SALVEAZĂ';
+                updateSaveButton();
+            });
+    }
+
+    function openDrawer() {
+        els.drawer.classList.add('drawer--open');
+        els.drawerOverlay.classList.add('drawer-overlay--open');
+        loadBalances();
+    }
+
+    function closeDrawer() {
+        els.drawer.classList.remove('drawer--open');
+        els.drawerOverlay.classList.remove('drawer-overlay--open');
+    }
+
+    function applyUserPermissions(user) {
+        var canReports = user.canAccessReports === true;
+        var reportsNav = document.querySelector('.drawer__item[data-view="reports"]');
+        if (reportsNav) {
+            reportsNav.classList.toggle('hidden', !canReports);
+        }
+        var balanceCards = $('balance-cards');
+        if (balanceCards) {
+            balanceCards.classList.toggle('hidden', !canReports);
+        }
+        if (!canReports && state.currentView === 'reports') {
+            switchView('entry');
+        }
+    }
+
+    function switchView(view) {
+        if (view === 'reports' && state.user && !state.user.canAccessReports) {
+            showSnackbar('Nu aveți permisiunea de a accesa rapoartele.', true);
+            return;
+        }
+
+        state.currentView = view;
+        closeDrawer();
+
+        document.querySelectorAll('.drawer__item[data-view]').forEach(function (item) {
+            item.classList.toggle('drawer__item--active', item.getAttribute('data-view') === view);
+        });
+
+        if (view === 'entry') {
+            els.entryView.classList.remove('hidden');
+            els.reportsView.classList.add('hidden');
+            els.topBarTitle.textContent = 'Introducere date';
+            els.appContainer.classList.add('app-container--entry');
+            loadBalances();
+        } else if (view === 'reports') {
+            els.entryView.classList.add('hidden');
+            els.reportsView.classList.remove('hidden');
+            els.topBarTitle.textContent = 'Rapoarte';
+            els.appContainer.classList.remove('app-container--entry');
+            if (!state.reportsInitialized && typeof ReportsModule !== 'undefined') {
+                state.reportsInitialized = true;
+                ReportsModule.init();
+            } else if (typeof ReportsModule !== 'undefined' && ReportsModule.refresh) {
+                ReportsModule.refresh();
+            }
+        }
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function openCategoryDialog() {
+        els.newCategoryName.value = '';
+        els.categoryDialog.classList.add('dialog-overlay--open');
+        els.newCategoryName.focus();
+    }
+
+    function closeCategoryDialog() {
+        els.categoryDialog.classList.remove('dialog-overlay--open');
+        els.fieldCategorie.value = state.form.categorie || '';
+    }
+
+    function confirmNewCategory() {
+        var name = els.newCategoryName.value.trim();
+        if (!name) {
+            showSnackbar('Introduceți un nume pentru categorie.', true);
+            return;
+        }
+
+        runServer('apiAddCategory', state.form.tip, name)
+            .then(function (result) {
+                closeCategoryDialog();
+                return loadCategories(result.name);
+            })
+            .then(function () {
+                showSnackbar('Categoria a fost adăugată.');
+            })
+            .catch(function (err) {
+                showSnackbar(err.message, true);
+            });
+    }
+
+    function showUnauthorized(user) {
+        els.loadingView.classList.add('hidden');
+        els.appRoot.classList.remove('hidden');
+        els.entryView.classList.add('hidden');
+        els.reportsView.classList.add('hidden');
+        els.unauthorizedView.classList.remove('hidden');
+        $('unauthorized-email').textContent = user.email || '(email indisponibil)';
+        updateUserDisplay('');
+    }
+
+    function setupSwitchAccountLinks() {
+        var links = [$('unauthorized-switch-account'), $('btn-switch-user')];
+        links.forEach(function (link) {
+            link.classList.add('hidden');
+        });
+        runServer('apiGetAppUrl')
+            .then(function (appUrl) {
+                if (!appUrl) {
+                    return;
+                }
+                var href = 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(appUrl);
+                links.forEach(function (link) {
+                    link.href = href;
+                    link.classList.remove('hidden');
+                });
+            })
+            .catch(function () {});
+    }
+
+    function showApp(user) {
+        els.loadingView.classList.add('hidden');
+        els.appRoot.classList.remove('hidden');
+        els.unauthorizedView.classList.add('hidden');
+        updateUserDisplay(user.operatorName);
+        applyUserPermissions(user);
+        resetForm();
+        loadBalances();
+    }
+
+    function bindEvents() {
+        $('btn-menu').addEventListener('click', openDrawer);
+        els.drawerOverlay.addEventListener('click', closeDrawer);
+
+        document.querySelectorAll('.drawer__item[data-view]').forEach(function (item) {
+            item.addEventListener('click', function () {
+                switchView(item.getAttribute('data-view'));
+            });
+        });
+
+        els.fieldDate.addEventListener('change', function () {
+            state.form.dataTranzactie = els.fieldDate.value;
+            updateFormProgress();
+        });
+
+        els.btnIntrare.addEventListener('click', function () { setTip('Intrare'); });
+        els.btnIesire.addEventListener('click', function () { setTip('Ieșire'); });
+        els.btnNumerar.addEventListener('click', function () { setSursa('Numerar'); });
+        els.btnBancar.addEventListener('click', function () { setSursa('Cont Bancar'); });
+
+        els.fieldCategorie.addEventListener('change', function () {
+            var val = els.fieldCategorie.value;
+            if (val === ADD_CATEGORY_OPTION) {
+                openCategoryDialog();
+                return;
+            }
+            state.form.categorie = val;
+            updateFormProgress();
+        });
+
+        els.fieldSuma.addEventListener('input', function () {
+            var raw = els.fieldSuma.value.replace(/[^\d.]/g, '');
+            var parts = raw.split('.');
+            if (parts.length > 2) {
+                raw = parts[0] + '.' + parts.slice(1).join('');
+            }
+            if (parts.length === 2 && parts[1].length > 2) {
+                raw = parts[0] + '.' + parts[1].substring(0, 2);
+            }
+            els.fieldSuma.value = raw;
+            state.form.suma = raw;
+            updateFormProgress();
+        });
+
+        els.fieldExplicatie.addEventListener('input', function () {
+            state.form.explicatie = els.fieldExplicatie.value;
+            updateFormProgress();
+        });
+
+        els.btnSave.addEventListener('click', saveTransaction);
+        $('btn-cancel-category').addEventListener('click', closeCategoryDialog);
+        $('btn-confirm-category').addEventListener('click', confirmNewCategory);
+
+        els.categoryDialog.addEventListener('click', function (e) {
+            if (e.target === els.categoryDialog) {
+                closeCategoryDialog();
+            }
+        });
+    }
+
+    function applyDateFieldHints() {
+        // Același locale ca <input type="date"> (browser/OS), nu ro-RO fix
+        var formatter = new Intl.DateTimeFormat(undefined, {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        });
+        var sampleDate = new Date(2026, 5, 24);
+        var sample = formatter.format(sampleDate);
+        var pattern = formatter.formatToParts(sampleDate).map(function (part) {
+            if (part.type === 'day') {
+                return 'zz';
+            }
+            if (part.type === 'month') {
+                return 'll';
+            }
+            if (part.type === 'year') {
+                return 'aaaa';
+            }
+            return part.value;
+        }).join('');
+
+        document.querySelectorAll('.field-hint--date').forEach(function (el) {
+            el.textContent = 'Format: ' + pattern + ' (ex. ' + sample + ')';
+        });
+    }
+
+    function init() {
+        cacheElements();
+        bindEvents();
+        applyDateFieldHints();
+
+        setupSwitchAccountLinks();
+
+        runServer('apiGetCurrentUser')
+            .then(function (user) {
+                state.user = user;
+                if (!user.authorized) {
+                    showUnauthorized(user);
+                    return;
+                }
+                showApp(user);
+            })
+            .catch(function (err) {
+                els.loadingView.innerHTML = '<div class="empty-state" style="color:#C62828">Eroare la încărcare: ' + escapeHtml(err.message) + '</div>';
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+})();
+</script>

@@ -1,0 +1,65 @@
+<div id="entry-view">
+    <div class="balance-cards" id="balance-cards">
+        <div class="balance-card">
+            <div class="balance-card__label">Bani în Casă (Cash)</div>
+            <div class="balance-card__amount" id="balance-cash">0.00 RON</div>
+        </div>
+        <div class="balance-card balance-card--bank">
+            <div class="balance-card__label">Bani în Bancă</div>
+            <div class="balance-card__amount" id="balance-bank">0.00 RON</div>
+        </div>
+    </div>
+
+    <form id="entry-form" onsubmit="return false;">
+        <div class="card" id="section-date">
+            <p class="card__title">Dată tranzacție</p>
+            <div class="form-field">
+                <input type="date" id="field-date" required>
+                <span class="field-hint field-hint--date"></span>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-tip">
+            <p class="card__title">Tip</p>
+            <div class="btn-row">
+                <button type="button" class="btn-choice" id="btn-intrare" data-tip="Intrare">INTRARE</button>
+                <button type="button" class="btn-choice" id="btn-iesire" data-tip="Ieșire">IEȘIRE</button>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-sursa">
+            <p class="card__title">Modalitate</p>
+            <div class="btn-row">
+                <button type="button" class="btn-choice" id="btn-numerar" data-sursa="Numerar">Numerar (Cash)</button>
+                <button type="button" class="btn-choice" id="btn-bancar" data-sursa="Cont Bancar">Cont Bancar</button>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-categorie">
+            <p class="card__title">Categorie</p>
+            <div class="form-field">
+                <select id="field-categorie" disabled>
+                    <option value="">— Selectați tipul mai întâi —</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-suma">
+            <p class="card__title">Sumă (RON)</p>
+            <div class="form-field">
+                <input type="text" id="field-suma" inputmode="decimal" placeholder="0.00" autocomplete="off" disabled>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-explicatie">
+            <p class="card__title">Explicație</p>
+            <div class="form-field">
+                <textarea id="field-explicatie" maxlength="200" placeholder="ex: Factură gaz, Benzină Dacia" disabled></textarea>
+            </div>
+        </div>
+
+        <div class="card card--disabled" id="section-save">
+            <button type="button" class="btn-save" id="btn-save" disabled>SALVEAZĂ</button>
+        </div>
+    </form>
+</div>

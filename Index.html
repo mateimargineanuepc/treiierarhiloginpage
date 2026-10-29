@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <?!= include('css/material'); ?>
+</head>
+<body>
+    <!-- Initial loading screen with skeleton -->
+    <div id="loading-view" class="loading-screen">
+        <div class="loading-screen__logo">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+        </div>
+        <div class="loading-screen__cards skeleton-stack">
+            <div class="skeleton skeleton--text" style="width:180px;margin:0 auto 16px"></div>
+            <div class="skeleton-grid-2">
+                <div class="skeleton skeleton--card"></div>
+                <div class="skeleton skeleton--card"></div>
+            </div>
+            <div class="skeleton skeleton--row" style="margin-top:16px"></div>
+            <div class="skeleton skeleton--row"></div>
+            <div class="skeleton skeleton--row" style="width:70%"></div>
+        </div>
+    </div>
+
+    <div id="app-root" class="hidden">
+        <!-- Sidebar navigation -->
+        <div class="drawer-overlay" id="drawer-overlay"></div>
+        <nav class="drawer" id="drawer">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand__icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="sidebar-brand__text">ContaAPP</div>
+                    <div class="sidebar-brand__sub">Contabilitate Primară</div>
+                </div>
+            </div>
+
+            <div class="sidebar-nav">
+                <div class="sidebar-nav__label">Navigare</div>
+                <button type="button" class="drawer__item drawer__item--active" data-view="entry">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    Introducere date
+                </button>
+                <button type="button" class="drawer__item" data-view="reports" id="drawer-item-reports">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Rapoarte
+                </button>
+                <div class="drawer__divider"></div>
+                <a class="drawer__item" id="btn-switch-user" target="_top" rel="noopener" style="text-decoration: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 3h5v5"/>
+                        <path d="M8 3H3v5"/>
+                        <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/>
+                        <path d="m15 9 6-6"/>
+                    </svg>
+                    Schimbă contul Google
+                </a>
+            </div>
+
+            <div class="sidebar-profile">
+                <div class="sidebar-profile__card">
+                    <div class="sidebar-profile__avatar" id="sidebar-avatar">?</div>
+                    <div style="min-width:0">
+                        <div class="sidebar-profile__name" id="sidebar-user-name">—</div>
+                        <div class="sidebar-profile__role">Operator</div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="main-wrapper">
+            <header class="top-bar">
+                <button type="button" class="top-bar__menu" id="btn-menu" aria-label="Meniu">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <line x1="3" y1="18" x2="21" y2="18"/>
+                    </svg>
+                </button>
+                <div class="top-bar__title" id="top-bar-title">Introducere date</div>
+
+                <div class="top-bar__search">
+                    <svg class="top-bar__search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="search" placeholder="Căutare..." tabindex="-1" aria-hidden="true" readonly>
+                </div>
+
+                <div class="top-bar__actions">
+                    <button type="button" class="top-bar__icon-btn" aria-label="Notificări" tabindex="-1">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <span class="top-bar__notif-dot"></span>
+                    </button>
+                    <div class="top-bar__user" id="top-bar-user"></div>
+                </div>
+            </header>
+
+            <main class="app-container app-container--entry" id="app-container">
+                <?!= include('views/EntryView'); ?>
+                <?!= include('views/ReportsView'); ?>
+                <?!= include('views/UnauthorizedView'); ?>
+            </main>
+        </div>
+    </div>
+
+    <div class="dialog-overlay" id="category-dialog-overlay">
+        <div class="dialog">
+            <h3>Categorie nouă</h3>
+            <div class="form-field">
+                <label for="new-category-name">Denumire categorie</label>
+                <input type="text" id="new-category-name" maxlength="50" placeholder="ex: Reparații">
+            </div>
+            <div class="dialog__actions">
+                <button type="button" class="btn-text" id="btn-cancel-category">Anulează</button>
+                <button type="button" class="btn-primary" id="btn-confirm-category">Adaugă</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="snackbar" id="snackbar"></div>
+
+    <?!= include('js/app'); ?>
+    <?!= include('js/reports'); ?>
+</body>
+</html>
