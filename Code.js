@@ -203,6 +203,18 @@ function beginEditorRun_() {
 }
 
 /**
+ * Aprobă permisul pentru apeluri externe (UrlFetchApp), folosit la verificarea tokenului Google.
+ * Se rulează o singură dată din editor, de contul care deține deploy-ul.
+ */
+function authorizeExternalRequests() {
+    beginEditorRun_();
+    var response = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=test', {
+        muteHttpExceptions: true,
+    });
+    Logger.log('Permis UrlFetchApp OK (răspuns ' + response.getResponseCode() + ').');
+}
+
+/**
  * Creează/inițializează foile și datele seed.
  */
 function setupSheets() {

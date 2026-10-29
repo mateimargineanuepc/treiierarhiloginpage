@@ -7,13 +7,26 @@ Codul se editează local (clasp) și se publică în Apps Script.
 > Repo GitHub (**public**): <https://github.com/mateimargineanuepc/treiierarhiloginpage>.
 > Același repo conține codul aplicației și pagina de login (folderul `docs/`), servită cu GitHub Pages.
 
+## Adresa de accesare a aplicației
+
+**<https://is.gd/ContaApp>** — acesta este linkul de dat utilizatorilor.
+
+Redirecționează (HTTP 301) către pagina de login:
+`https://mateimargineanuepc.github.io/treiierarhiloginpage/`, de unde utilizatorul se autentifică cu Google
+și ajunge în aplicație (fluxul este descris mai jos).
+
+Dacă adresa paginii de login se schimbă (de exemplu se redenumește repo-ul), linkul scurt se actualizează
+la is.gd; aplicația nu trebuie modificată pentru asta. Linkul se poate verifica oricând cu
+`curl -I https://is.gd/ContaApp`.
+
 ---
 
 ## 1. Cum e alcătuit sistemul
 
 ```
  Utilizator
-    │  1. deschide pagina de login (GitHub Pages)         ← folderul docs/ din acest repo
+    │  0. deschide https://is.gd/ContaApp (redirect către pagina de login)
+    │  1. ajunge pe pagina de login (GitHub Pages)         ← folderul docs/ din acest repo
     │  2. se autentifică cu Google (Sign-In)
     │  3. e redirecționat la web app-ul Apps Script, cu un token Google în URL
     ▼
