@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ContaAPP — Autentificare</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        :root { color-scheme: light; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: #f4f6f8;
+            color: #1f2933;
+        }
+        .card {
+            width: min(92vw, 380px);
+            padding: 40px 32px;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            text-align: center;
+        }
+        h1 { margin: 0 0 8px; font-size: 1.5rem; }
+        p { margin: 0; color: #52606d; line-height: 1.5; }
+        #google-signin-button { display: flex; justify-content: center; margin-top: 28px; min-height: 44px; }
+        #status { margin-top: 16px; font-size: 0.875rem; }
+        #error { margin-top: 12px; font-size: 0.875rem; color: #c62828; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>ContaAPP</h1>
+        <p>Autentificați-vă cu contul Google pentru a continua.</p>
+        <div id="google-signin-button"></div>
+        <p id="status" role="status"></p>
+        <p id="error" role="alert"></p>
+    </main>
+
+    <script>
+        (function () {
+            'use strict';
+
+            // Tokenul Google se trimite doar către web app-uri Apps Script.
+            var APP_HOST = 'script.google.com';
+            var config = null;
+
+            function $(id) {
+                return document.getElementById(id);
+            }
+
+            function showError(message) {
+                $('status').textContent = '';
+                $('error').textContent = message;
+            }
+
+            function loadConfig() {
+                return fetch('config.json?t=' + Date.now(), { cache: 'no-store' }).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Fișierul config.json nu a putut fi citit.');
+                    }
+                    return response.json();
+                });
+            }
+
+            function isValidAppUrl(value) {
+                try {
+                    var url = new URL(value);
+                    return url.protocol === 'https:' && url.hostname === APP_HOST && /\/exec$/.test(url.pathname);
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            function handleCredential(response) {
+                $('error').textContent = '';
+                $('status').textContent = 'Se deschide aplicația...';
+                var target = new URL(config.appUrl);
+                target.searchParams.set('id_token', response.credential);
+                window.location.replace(target.toString());
+            }
+
+            function renderButton(attempt) {
+                if (!window.google || !google.accounts || !google.accounts.id) {
+                    if (attempt > 50) {
+                        showError('Nu s-a putut încărca Google Sign-In. Reîncărcați pagina.');
+                        return;
+                    }
+                    setTimeout(function () {
+                        renderButton(attempt + 1);
+                    }, 200);
+                    return;
+                }
+                google.accounts.id.initialize({
+                    client_id: config.clientId,
+                    callback: handleCredential,
+                    auto_select: false,
+                });
+                google.accounts.id.renderButton($('google-signin-button'), {
+                    theme: 'outline',
+                    size: 'large',
+                    text: 'signin_with',
+                    locale: 'ro',
+                });
+            }
+
+            loadConfig()
+                .then(function (loaded) {
+                    config = loaded;
+                    if (!config.clientId) {
+                        showError('Configurare incompletă: lipsește clientId în config.json.');
+                        return;
+                    }
+                    if (!isValidAppUrl(config.appUrl)) {
+                        showError('Configurare incompletă: appUrl din config.json trebuie să fie linkul https://script.google.com/.../exec.');
+                        return;
+                    }
+                    renderButton(0);
+                })
+                .catch(function (err) {
+                    showError(err.message);
+                });
+        })();
+    </script>
+</body>
+</html>

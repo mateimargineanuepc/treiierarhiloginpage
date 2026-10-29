@@ -4,8 +4,8 @@ Aplicație web pentru evidența încasărilor și plăților (numerar și cont b
 Rulează ca **Google Apps Script web app** și citește/scrie într-un **Google Sheet**.
 Codul se editează local (clasp) și se publică în Apps Script.
 
-> Proiectul este **doar local** (fără remote). Singurul lucru publicat pe GitHub este pagina de login,
-> în repo-ul separat `contaapp-login` (vezi mai jos).
+> Repo GitHub (**public**): <https://github.com/mateimargineanuepc/treiierarhiloginpage>.
+> Același repo conține codul aplicației și pagina de login (folderul `docs/`), servită cu GitHub Pages.
 
 ---
 
@@ -13,7 +13,7 @@ Codul se editează local (clasp) și se publică în Apps Script.
 
 ```
  Utilizator
-    │  1. deschide pagina de login (GitHub Pages)         ← repo: mateimargineanuepc/-contaapp-login
+    │  1. deschide pagina de login (GitHub Pages)         ← folderul docs/ din acest repo
     │  2. se autentifică cu Google (Sign-In)
     │  3. e redirecționat la web app-ul Apps Script, cu un token Google în URL
     ▼
@@ -33,7 +33,7 @@ Cele trei componente:
 |---|---|---|
 | Aplicația | Apps Script (sincronizat local cu `clasp`) | Interfața, logica, accesul la Sheet |
 | Datele | Un Google Sheet, referit prin ID | Registrul și nomenclatorul |
-| Login | Pagină statică pe GitHub Pages | Butonul „Sign in with Google" |
+| Login | Pagină statică (`docs/`) pe GitHub Pages | Butonul „Sign in with Google" |
 
 ---
 
@@ -121,7 +121,7 @@ Același lucru se întâmplă și dacă pagina e pusă într-un Google Sites (em
 Butonul Google rulează pe o pagină statică găzduită pe un domeniu acceptat (GitHub Pages),
 iar Apps Script primește doar rezultatul:
 
-1. `https://mateimargineanuepc.github.io/-contaapp-login/` afișează butonul Google Sign-In.
+1. `https://mateimargineanuepc.github.io/treiierarhiloginpage/` (din `docs/index.html`) afișează butonul Google Sign-In.
 2. După login, pagina redirecționează la linkul `/exec` al web app-ului, cu `?id_token=...`.
 3. `doGet(e)` citește `id_token`, îl verifică, creează sesiunea și o trimite paginii (în loc ca clientul să facă login).
 4. Tokenul se face **de unică folosință** (hash-ul lui se reține în cache după prima folosire),
@@ -130,13 +130,33 @@ iar Apps Script primește doar rezultatul:
 
 ---
 
+### Configurarea paginii de login (`docs/config.json`)
+Pagina citește la fiecare încărcare fișierul `docs/config.json`:
+
+```json
+{
+  "clientId": "<OAuth client ID>",
+  "appUrl": "https://script.google.com/macros/s/<ID>/exec"
+}
+```
+
+- **Schimbarea linkului /exec fără push local:** pe GitHub deschide `docs/config.json`, apasă creionul (Edit),
+  modifică `appUrl`, apoi *Commit changes*. GitHub Pages se actualizează în 1–2 minute (uneori până la ~10 min din cache).
+- Pagina acceptă doar linkuri de forma `https://script.google.com/.../exec`. Orice alt domeniu e refuzat, ca
+  tokenul Google să nu poată fi trimis din greșeală către alt site.
+- Un deploy nou al web app-ului păstrează același link `/exec` dacă editezi deploy-ul existent (*New version*);
+  linkul se schimbă doar dacă creezi un deploy **nou**.
+- **Atenție la Windows:** `Index.html` (aplicația) și `index.html` (login) ar fi același fișier pe Windows,
+  de aceea pagina de login stă în `docs/` și GitHub Pages se servește din folderul `/docs`.
+
 ## 5. Configurare Google Cloud (OAuth)
 
 - Proiect Google Cloud cu un **OAuth client ID** de tip *Web application* (valoarea este în `Constants.js`, `GOOGLE_CLIENT_ID`).
   Client ID-ul nu este un secret.
 - Ecranul de consimțământ: *External*. Pentru Sign-In simplu cu email nu sunt necesari test users.
+- **GitHub Pages:** *Settings > Pages > Source: Deploy from a branch > `main` > `/docs`*.
 - **Authorized JavaScript origins**: `https://mateimargineanuepc.github.io`
-  (doar domeniul, fără calea `/-contaapp-login`).
+  (doar domeniul, fără calea `/treiierarhiloginpage`).
 
 ---
 
@@ -159,10 +179,10 @@ La prima rulare după adăugarea unui scope nou, contul care face deploy-ul treb
 
 ## 7. Git și conturi GitHub
 
-- Acest repo este **local, fără remote**. Identitatea locală (`git config --local`) este contul **epc**:
+- Identitatea locală (`git config --local`) este contul **epc**:
   `matei.margineanu.epc@gmail.com`. Configurația globală (email de serviciu) nu se modifică.
 - Contul GitHub folosit: `mateimargineanuepc`, prin alias-ul SSH `matei-epc`
-  (ex.: `git@matei-epc:mateimargineanuepc/-contaapp-login.git`).
+  (remote-ul `origin`: `git@matei-epc:mateimargineanuepc/treiierarhiloginpage.git`, branch `main`).
 - `gh` (GitHub CLI) este autentificat cu **alt cont** — nu se folosește pentru acest proiect.
 
 ---
@@ -175,10 +195,11 @@ Făcut:
 - [x] Backend de autentificare: verificare ID token Google, sesiuni de 6 ore, token de sesiune la toate funcțiile `api*`
 - [x] OAuth client ID creat și pus în cod
 - [x] Cod împins în Apps Script
-- [x] Repo `-contaapp-login` creat pe contul epc
+- [x] Repo `treiierarhiloginpage` creat pe contul epc și proiectul urcat pe `main`
+- [x] Pagina de login scrisă (`docs/index.html`), configurabilă din `docs/config.json`
 
 De făcut:
-- [ ] Pagina statică de login în repo-ul `-contaapp-login` + activare GitHub Pages
+- [ ] Activare GitHub Pages (Settings > Pages > branch `main`, folder `/docs`) și completarea `appUrl` în `docs/config.json`
 - [ ] Adăugare `https://mateimargineanuepc.github.io` la Authorized JavaScript origins
 - [ ] `doGet(e)`: acceptă `id_token`, îl folosește o singură dată, trimite sesiunea paginii
 - [ ] Înlocuirea ecranului `LoginView.html` (butonul Google din iframe nu poate funcționa) cu linkul către pagina de login
