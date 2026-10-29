@@ -5,6 +5,10 @@
     <meta charset="UTF-8">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <?!= include('css/material'); ?>
+    <script>
+        window.ContaAuth = { clientId: <?!= JSON.stringify(GOOGLE_CLIENT_ID) ?>, token: '', onExpired: function () {} };
+    </script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
     <!-- Initial loading screen with skeleton -->
@@ -25,6 +29,8 @@
             <div class="skeleton skeleton--row" style="width:70%"></div>
         </div>
     </div>
+
+    <?!= include('views/LoginView'); ?>
 
     <div id="app-root" class="hidden">
         <!-- Sidebar navigation -->
@@ -60,14 +66,14 @@
                     Rapoarte
                 </button>
                 <div class="drawer__divider"></div>
-                <a class="drawer__item" id="btn-switch-user" target="_top" rel="noopener" style="text-decoration: none;">
+                <a class="drawer__item" id="btn-switch-user" href="#" style="text-decoration: none;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M16 3h5v5"/>
                         <path d="M8 3H3v5"/>
                         <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/>
                         <path d="m15 9 6-6"/>
                     </svg>
-                    Schimbă contul Google
+                    Deconectare
                 </a>
             </div>
 

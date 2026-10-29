@@ -2,6 +2,11 @@
  * Constante globale ContaAPP.
  */
 var SPREADSHEET_ID = '1g2P0SC-qGaBi8_yoWUZUfVfoSAhmkJUKp1Ay-FaeIzI';
+// OAuth Client ID (tip Web application) din Google Cloud Console, pentru Google Sign-In.
+var GOOGLE_CLIENT_ID = '';
+var SESSION_TTL_SECONDS = 21600;
+var SESSION_CACHE_PREFIX = 'sess_';
+
 var SHEET_REGISTRU = 'Registru_Central';
 var SHEET_NOMENCLATOR = 'Nomenclator_Setări';
 

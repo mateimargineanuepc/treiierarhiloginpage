@@ -90,11 +90,20 @@ var ReportsModule = (function () {
 
     function runServer(fnName) {
         var args = Array.prototype.slice.call(arguments, 1);
+        if (fnName !== 'apiLogin') {
+            args.unshift(window.ContaAuth.token);
+        }
         return new Promise(function (resolve, reject) {
             var runner = google.script.run
                 .withSuccessHandler(resolve)
                 .withFailureHandler(function (err) {
-                    reject(new Error(err.message || String(err)));
+                    var message = err.message || String(err);
+                    var error = new Error(message);
+                    if (message.indexOf('SESIUNE_EXPIRATA') !== -1) {
+                        error.expired = true;
+                        window.ContaAuth.onExpired();
+                    }
+                    reject(error);
                 });
             runner[fnName].apply(runner, args);
         });

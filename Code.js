@@ -26,97 +26,125 @@ function include(filename) {
 // --- API handlers (apelate din client via google.script.run) ---
 
 /**
+ * Autentificare cu token-ul ID emis de Google Sign-In.
+ * @param {string} idToken - Credențialul (JWT) primit de la Google
+ * @returns {{ token: string, user: Object }}
+ */
+function apiLogin(idToken) {
+    return AuthService.login(idToken);
+}
+
+/**
+ * Încheie sesiunea curentă.
+ * @param {string} token - Token de sesiune
+ */
+function apiLogout(token) {
+    AuthService.logout(token);
+}
+
+/**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @returns {{ email: string, displayName: string, authorized: boolean, operatorName: string, canAccessReports: boolean }}
  */
-function apiGetCurrentUser() {
+function apiGetCurrentUser(token) {
+    AuthService.useSession(token);
     return AuthService.getCurrentUser();
 }
 
 /**
- * URL-ul web app-ului publicat (pentru reautentificare cu alt cont Google).
- * @returns {string}
- */
-function apiGetAppUrl() {
-    return ScriptApp.getService().getUrl();
-}
-
-/**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} tip
  * @returns {string[]}
  */
-function apiGetCategoriesByTip(tip) {
+function apiGetCategoriesByTip(token, tip) {
+    AuthService.useSession(token);
     AuthService.requireAuthorizedOperator();
     return CategoryService.getCategoriesByTip(tip);
 }
 
 /**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} tip
  * @param {string} name
  * @returns {{ success: boolean, name: string }}
  */
-function apiAddCategory(tip, name) {
+function apiAddCategory(token, tip, name) {
+    AuthService.useSession(token);
     AuthService.requireAuthorizedOperator();
     return CategoryService.addCategory(tip, name);
 }
 
 /**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {Object} payload
  * @returns {{ success: boolean, id: number }}
  */
-function apiAppendTransaction(payload) {
+function apiAppendTransaction(token, payload) {
+    AuthService.useSession(token);
     var result = TransactionService.appendTransaction(payload);
     BalanceService.invalidateCache();
     return result;
 }
 
 /**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @returns {{ cash: number, bank: number, cashFormatted: string, bankFormatted: string }}
  */
-function apiGetBalances() {
+function apiGetBalances(token) {
+    AuthService.useSession(token);
     return BalanceService.getBalances();
 }
 
 /**
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} fromIso - yyyy-MM-dd
  * @param {string} toIso - yyyy-MM-dd
  * @returns {Object}
  */
-function apiGetReports(fromIso, toIso) {
+function apiGetReports(token, fromIso, toIso) {
+    AuthService.useSession(token);
     return ReportService.getReports(fromIso, toIso);
 }
 
 /**
  * Meta-date rapoarte (categorii, min/max dată).
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @returns {Object}
  */
-function apiGetReportMeta() {
+function apiGetReportMeta(token) {
+    AuthService.useSession(token);
     return ReportService.getReportMeta();
 }
 
 /**
  * 4.1 Fișa lunii.
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} fromIso
  * @param {string} toIso
  * @returns {Object}
  */
-function apiGetReportFisaLunii(fromIso, toIso) {
+function apiGetReportFisaLunii(token, fromIso, toIso) {
+    AuthService.useSession(token);
     return ReportService.getFisaLunii(fromIso, toIso);
 }
 
 /**
  * 4.2 Analiză cheltuieli.
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} categoriesJson - JSON array de categorii ieșire
  * @param {string} fromIso
  * @param {string} toIso
  * @returns {Object}
  */
-function apiGetReportCheltuieli(categoriesJson, fromIso, toIso) {
+function apiGetReportCheltuieli(token, categoriesJson, fromIso, toIso) {
+    AuthService.useSession(token);
     var categories = JSON.parse(categoriesJson || '[]');
     return ReportService.getAnalizaCheltuieli(categories, fromIso, toIso);
 }
 
 /**
  * 4.3 Comparativ temporal.
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} fromA
  * @param {string} toA
  * @param {string} fromB
@@ -124,7 +152,8 @@ function apiGetReportCheltuieli(categoriesJson, fromIso, toIso) {
  * @param {string} categoriesJson - JSON { intrari: string[], iesiri: string[] }
  * @returns {Object}
  */
-function apiGetReportComparativ(fromA, toA, fromB, toB, categoriesJson) {
+function apiGetReportComparativ(token, fromA, toA, fromB, toB, categoriesJson) {
+    AuthService.useSession(token);
     var payload = JSON.parse(categoriesJson || '{}');
     return ReportService.getComparativTemporal(
         fromA,
@@ -139,12 +168,14 @@ function apiGetReportComparativ(fromA, toA, fromB, toB, categoriesJson) {
 
 /**
  * 4.4 Istoric venituri.
+ * @param {string} token - Token de sesiune (din apiLogin)
  * @param {string} categoriesJson - JSON array de categorii
  * @param {string} fromIso
  * @param {string} toIso
  * @returns {Object}
  */
-function apiGetReportIstoricVenituri(categoriesJson, fromIso, toIso) {
+function apiGetReportIstoricVenituri(token, categoriesJson, fromIso, toIso) {
+    AuthService.useSession(token);
     var categories = JSON.parse(categoriesJson || '[]');
     return ReportService.getIstoricVenituri(categories, fromIso, toIso);
 }
@@ -256,6 +287,7 @@ function testAppendTransaction() {
         .getValue();
 
     var testEmail = Session.getEffectiveUser().getEmail();
+    AuthService.setCurrentEmail(testEmail);
     SheetService.getSpreadsheet()
         .getSheetByName(SHEET_NOMENCLATOR)
         .getRange(2, 4)

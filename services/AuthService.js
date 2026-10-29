@@ -2,6 +2,93 @@
  * Autentificare și mapare utilizator prin email Google.
  */
 var AuthService = (function () {
+    // Emailul utilizatorului pentru execuția curentă (setat din sesiune).
+    var currentEmail = '';
+
+    /**
+     * Verifică un ID token Google și returnează emailul verificat.
+     * @param {string} idToken
+     * @returns {string}
+     */
+    function verifyIdToken(idToken) {
+        if (!GOOGLE_CLIENT_ID) {
+            throw new Error('GOOGLE_CLIENT_ID nu este configurat în Constants.js.');
+        }
+        if (!idToken || typeof idToken !== 'string') {
+            throw new Error('Credențial Google lipsă.');
+        }
+
+        var response = UrlFetchApp.fetch(
+            'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+            { muteHttpExceptions: true }
+        );
+        if (response.getResponseCode() !== 200) {
+            throw new Error('Autentificare Google invalidă.');
+        }
+
+        var info = JSON.parse(response.getContentText());
+        var issuerOk = info.iss === 'accounts.google.com' || info.iss === 'https://accounts.google.com';
+        if (info.aud !== GOOGLE_CLIENT_ID || !issuerOk || String(info.email_verified) !== 'true' || !info.email) {
+            throw new Error('Autentificare Google invalidă.');
+        }
+
+        return String(info.email).toLowerCase();
+    }
+
+    /**
+     * Creează o sesiune server-side (cache) pentru un email verificat.
+     * @param {string} email
+     * @returns {string} token de sesiune
+     */
+    function createSession(email) {
+        var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+        CacheService.getScriptCache().put(SESSION_CACHE_PREFIX + token, email, SESSION_TTL_SECONDS);
+        return token;
+    }
+
+    /**
+     * Stabilește utilizatorul execuției curente din token-ul de sesiune.
+     * @param {string} token
+     */
+    function useSession(token) {
+        var email = token ? CacheService.getScriptCache().get(SESSION_CACHE_PREFIX + token) : null;
+        if (!email) {
+            throw new Error('SESIUNE_EXPIRATA');
+        }
+        currentEmail = email;
+    }
+
+    /**
+     * Setează direct emailul curent (doar pentru teste rulate din editor).
+     * @param {string} email
+     */
+    function setCurrentEmail(email) {
+        currentEmail = String(email || '').toLowerCase();
+    }
+
+    /**
+     * Login cu ID token Google.
+     * @param {string} idToken
+     * @returns {{ token: string, user: Object }}
+     */
+    function login(idToken) {
+        var email = verifyIdToken(idToken);
+        var token = createSession(email);
+        currentEmail = email;
+        return { token: token, user: getCurrentUser() };
+    }
+
+    /**
+     * Șterge sesiunea.
+     * @param {string} token
+     */
+    function logout(token) {
+        if (token) {
+            CacheService.getScriptCache().remove(SESSION_CACHE_PREFIX + token);
+        }
+        currentEmail = '';
+    }
+
     /**
      * Interpretează valoarea din coloana Acces Rapoarte.
      * @param {*} value
@@ -92,12 +179,7 @@ var AuthService = (function () {
      * @returns {{ email: string, displayName: string, authorized: boolean, operatorName: string, canAccessReports: boolean }}
      */
     function getCurrentUser() {
-        var email = '';
-        try {
-            email = Session.getActiveUser().getEmail().toLowerCase();
-        } catch (e) {
-            email = '';
-        }
+        var email = currentEmail;
 
         var users = getUsersByEmail();
         var profile = users[email];
@@ -142,6 +224,10 @@ var AuthService = (function () {
     }
 
     return {
+        login: login,
+        logout: logout,
+        useSession: useSession,
+        setCurrentEmail: setCurrentEmail,
         parseReportsAccess: parseReportsAccess,
         getUsersByEmail: getUsersByEmail,
         getEmailMap: getEmailMap,
